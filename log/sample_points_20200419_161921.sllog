@@ -1,0 +1,42 @@
+ 20200419_161921 Creating Log File Name: C:\Users\raysm\workspace\python\PlantInvasion\log\sample_points_20200419_161921.sllog
+ 20200419_161921 Trace levels from properties file C:\Users\raysm\workspace\python\PlantInvasion\sample_points.properties
+ 20200419_161921 loadTraceFlags: list_props,prop_change,trace_flags
+ 20200419_161921 list_props = True
+ 20200419_161921 prop_change = True
+ 20200419_161921 trace_flags = True
+ 20200419_161921 sample_points.py 
+
+ 20200419_161921 args: Namespace(adjWidthForSize=True, forceNew=False, mapRotate=45.0, maptype='hybrid', scale=1, showSampleLL=True, testMarks=False, useOldFile=False, zoom=19)
+
+ 20200419_161921 35 rows
+ 20200419_161921 10 columns
+ 20200419_161921 33 Sample Points
+ 20200419_161921 Max Longitude: -71.18270 Latitude: 42.37449
+ 20200419_161921 Min Longitude: -71.18573 Latitude: 42.37183
+ 20200419_161921 Points on the edge
+ 20200419_161921 max_lat  9-1  Longitude: -71.18546 latitude: 42.37449
+ 20200419_161921 min_lat  2-5  Longitude: -71.18409 latitude: 42.37183
+ 20200419_161921 max_long TBM  Longitude: -71.18270 latitude: 42.37299
+ 20200419_161921 min_long 9-2  Longitude: -71.18573 latitude: 42.37426
+ 20200419_161921 points rotated 45 deg bounds:ulLat=42.375619 ulLong=-71.187014 lrLat=42.370701 lrLong=-71.181421
+ 20200419_161921 points rotated 45 deg bounds(meters):height=546.755 width=459.378 diagonal=714.133
+ 20200419_161921 GogleMapImage: ulLat=42.37562 ulLong=-71.18701 lrLat=42.37070 lrLong=-71.18142
+ 20200419_161921              corner to corner:= 714.13 meters
+ 20200419_161921 Loading image from image file C:\Users\raysm\workspace\python\PlantInvasion\out\gmi_ulA42_375619_O-71_187014_lRA42_370701_O-71_181421_640x640_sc1z19_h_mr45.png
+ 20200419_161921 Loading info from info file C:\Users\raysm\workspace\python\PlantInvasion\out\gmi_ulA42_375619_O-71_187014_lRA42_370701_O-71_181421_640x640_sc1z19_h_mr45_png.imageinfo
+ 20200419_161921 File image: ulLat:42.375619 ulLong -71.187014 lrLat:42.370701 lrLong -71.181421 mapRotate 45
+ 20200419_161921 image width=2084.00 height=2481.00
+ 20200419_161921 Plot boundaries
+ 20200419_161921     ulLat=42.37562 ulLong=-71.18701 lrLat=42.37070 lrLong=-71.18142
+ 20200419_161921     corner to corner:= 714.13 meters
+ 20200419_161921     image 2084 width in pixels 2481 height in pixels
+ 20200419_161922 Rotate map 45.00 degrees
+ 20200419_161922 Saving augmented image for base = C:\Users\raysm\workspace\python\PlantInvasion\out\gmi_ulA42_375619_O-71_187014_lRA42_370701_O-71_181421_640x640_sc1z19_h_mr45.png)
+ 20200419_161922 Saving augmented image name C:\Users\raysm\workspace\python\PlantInvasion\out\gmi_ulA42_375619_O-71_187014_lRA42_370701_O-71_181421_640x640_sc1z19_h_mr45_AUG.png
+ 20200419_161924 Image file saved in C:\Users\raysm\workspace\python\PlantInvasion\out\gmi_ulA42_375619_O-71_187014_lRA42_370701_O-71_181421_640x640_sc1z19_h_mr45_AUG.png
+ 20200419_161925 Loading image from image file C:\Users\raysm\workspace\python\PlantInvasion\out\gmi_ulA42_375619_O-71_187014_lRA42_370701_O-71_181421_640x640_sc1z19_h_mr45_AUG.png
+ 20200419_161925 Loading info from info file C:\Users\raysm\workspace\python\PlantInvasion\out\gmi_ulA42_375619_O-71_187014_lRA42_370701_O-71_181421_640x640_sc1z19_h_mr45_AUG_png.imageinfo
+ 20200419_161925 Info file C:\Users\raysm\workspace\python\PlantInvasion\out\gmi_ulA42_375619_O-71_187014_lRA42_370701_O-71_181421_640x640_sc1z19_h_mr45_AUG_png.imageinfo not found - use defaults
+ 20200419_180033 No differences
+ 20200419_180033 Saving properties file  C:\Users\raysm\workspace\python\PlantInvasion\sample_points.properties  20200419_180033
+ 20200419_180033 Closing log file C:\Users\raysm\workspace\python\PlantInvasion\log\sample_points_20200419_161921.sllog
