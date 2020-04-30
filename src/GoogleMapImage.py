@@ -14,23 +14,25 @@ from openpyxl.compat.strings import file
 from PIL import Image, ImageDraw, ImageFont
 import urllib.request, urllib.parse, urllib.error, io
 
-from GeoDraw import GeoDraw, geoDistance, gDistance, deg2rad
+from select_trace import SlTrace
+from select_error import SelectError
+
+from GeoDraw import GeoDraw, geoDistance, geoMove, gDistance, deg2rad
 from GMIError import GMIError
 from APIkey import APIKey
+from graphviz.files import File
 
 
 ###from msilib.schema import File
 ###from matplotlib.pyplot import thetagrids
 ###from lib2to3.fixer_util import String
 
-from select_trace import SlTrace
-
 EARTH_RADIUS = 6378137
 EQUATOR_CIRCUMFERENCE = 2 * pi * EARTH_RADIUS
 INITIAL_RESOLUTION = EQUATOR_CIRCUMFERENCE / 256.0
 ORIGIN_SHIFT = EQUATOR_CIRCUMFERENCE / 2.0
 
-def latlontopixels(lat, lon, zoom):
+def geo_latlontopixels(lat, lon, zoom):
     mx = (lon * ORIGIN_SHIFT) / 180.0
     deg = (90 + lat) * pi/360.0
     tan_deg = tan(deg)
@@ -44,7 +46,7 @@ def latlontopixels(lat, lon, zoom):
     py = (my + ORIGIN_SHIFT) / res
     return px, py
 
-def pixelstolatlon(px, py, zoom):
+def geo_pixelstolatlon(px, py, zoom):
     res = INITIAL_RESOLUTION / (2**zoom)
     mx = px * res - ORIGIN_SHIFT
     my = py * res - ORIGIN_SHIFT
@@ -165,8 +167,12 @@ def LoadImageInfo(infoName):
                     if info_type is str:
                         value = value_str
                     elif info_type is float:
+                        if value_str is None or value_str == "None":
+                            value_str = "0.0"
                         value = float(value_str)
                     elif info_type is int:
+                        if value_str is None or value_str == "None":
+                            value_str = "0"
                         value = int(value_str)
                     else:
                         raise GMIError("Unsupported type for image info%s" % infoName)
@@ -228,10 +234,6 @@ End of utility functions
 
 
 class GoogleMapImage:
-    """
-    Generate map image, given latitute, longitude of upper left
-    and lower right corners
-    """
     def __init__(self,
                  ulLat=None, ulLong=None,
                  lrLat=None, lrLong=None,
@@ -248,10 +250,64 @@ class GoogleMapImage:
                                                     # x fraction, y fraction, length fraction
                  showSampleLL=True,                 # Show sample lat long
                  useOldFile=False,                  # Use existing image file even if code changed
+                 xDim=None,
+                 yDim=None,
                  xSize=None,
                  ySize=None,
                  maxSize = None,
                  file=None):
+        """ Generate map image, given latitute, longitude of upper left
+        and lower right corners
+        :ulLat, ulLong:  Upper left corner latitude, Longitude of image
+        :lrLat, lrLong: Lower right corner latitude, longitude of image
+        :displayRotateChange: True - create displays unrotated, rotated
+                        default: False
+        :forceNew: True - force obtaining new image
+                default: use cached image file if present
+        :mapRotate: Rotate image (degrees), if present
+        :mapPoints: list of points added to display
+                    if present - Draw map to include all points,
+                     when rotated
+        :mapBorderM: extra space on edges
+                    ...X additional area added surrounding points
+                        M - meters
+                        D - degrees
+                        P - pixels
+                Default: 10 meters (e.g. mapBorderM=10)
+        :expandRotate: adjust image so rotated image adjusts
+                         to size of outputd
+                         default: no change
+        :maptype: Google Maps type
+                    default: 'hybrid'
+        :zoom: Google Maps zoom setting
+                Default: 18
+        :scale: Map scale
+                Default: 1
+        :compasRose: Place compas pointer
+                    (x fraction, y fraction, length fraction)
+                    default: (.75, .25, .10)
+        :showSampleLL - include sample Longitude, Latitude
+                    default: show
+        :useOldFile: use pre-existing file even if code has changed
+                    default: False
+        :xDim:  picture x dimension in meters
+        :yDim:  picture y dimension in meters
+        :xSize: raw image x-size in pixels
+                default: maxSize else 640
+        :ySize: raw image y-size in pixels
+                default: maxSize else 640
+        :maxSize: maximum raw image x,y size in pixels
+                INSTEAD of xSize,ySize
+                default: use xSize, ySize
+        :file: image file name
+                default: construct name from image attributes
+                        e.g.:
+                            image: gmi_ulA-20_372547_O-80_297716
+                                    _lRA-20_373936_O-80_294739
+                                    _640x640_sc1z19
+                                    _h_mr45.png
+                            info:  gmi_uLA-20..._png.imageinfo
+        """
         self.displayRotateChange = displayRotateChange
         self.forceNew = forceNew
         self.useOldFile = useOldFile
@@ -261,35 +317,6 @@ class GoogleMapImage:
                 or lrLat is not None or lrLong is not None) and mapPoints is not None:
             raise GMIError("Use only one of ullat... or mapPoints")
         self.mapPoints = mapPoints
-        
-        if mapPoints is not None:
-            ulLatLong, lrLatLong = GeoDraw.boundLatLong(points=mapPoints, mapRotate=mapRotate,
-                                                   borderM=mapBorderM,
-                                                   borderD=mapBorderD,
-                                                   borderP=mapBorderP)
-            ulLat = ulLatLong[0]
-            ulLong = ulLatLong[1]
-            lrLat = lrLatLong[0]
-            lrLong = lrLatLong[1]
-
-            SlTrace.lg(("points rotated %.0f deg bounds:" % mapRotate)
-                  + "ulLat=%.6f ulLong=%.6f lrLat=%.6f lrLong=%.6f" %
-                  (ulLat, ulLong,  lrLat, lrLong))
-            
-            height = gDistance((ulLat, ulLong), (lrLat, ulLong))*1000
-            width = gDistance((ulLat, ulLong), (ulLat, lrLong))*1000
-            diagonal = gDistance((ulLat, ulLong), (lrLat, lrLong))*1000
-            SlTrace.lg("points rotated %.0f deg bounds(meters):" % (mapRotate)
-                  + "height=%.6g width=%.6g diagonal=%.6g" %
-                  (height, width, diagonal))
-        self.ulLat = ulLat
-        self.ulLong = ulLong
-        self.lrLat = lrLat
-        self.lrLong = lrLong
-        SlTrace.lg("GogleMapImage: ulLat=%.5f ulLong=%.5f lrLat=%.5f lrLong=%.5f" %
-                            (ulLat, ulLong, lrLat, lrLong))
-        SlTrace.lg("             corner to corner:= %.2f meters" %
-                             geoDistance(latLong=(ulLat, ulLong), latLong2=(lrLat, lrLong)))
         if compassRose is not None and compassRose[0] < 0:
             compassRose = None                      # -1 -- None
         self.compassRose = compassRose
@@ -301,22 +328,71 @@ class GoogleMapImage:
         if zoom is None:
             zoom = 18
         self.zoom = zoom
-        
-        if scale is None:
-            scale = 1
-        self.scale = scale
-        
-        if maxSize is not None:
-            xSize = ySize = maxSize
-        else:
-            xSize = ySize = 640
-        self.xSize = xSize
-        self.ySize = ySize
-        if file is None:
-            file = self.makeFileName()
-        self.file = file                # Save name, if specified
- 
-        self.image = self.getImage()
+
+        if file is not None and mapPoints is None and ulLat is None:
+            image, info = LoadImageFile(file)
+            SlTrace.lg(f"info:{info}")
+            self.ulLat = info["ulLat"]
+            self.ulLong = info["ulLong"]
+            self.lrLat = info["lrLat"]
+            self.lrLong = info["lrLong"]
+            self.image = image
+        else:            
+            if mapPoints is not None:
+                ulLatLong, lrLatLong = GeoDraw.boundLatLong(points=mapPoints, mapRotate=mapRotate,
+                                                       borderM=mapBorderM,
+                                                       borderD=mapBorderD,
+                                                       borderP=mapBorderP)
+                ulLat = ulLatLong[0]
+                ulLong = ulLatLong[1]
+                lrLat = lrLatLong[0]
+                lrLong = lrLatLong[1]
+                SlTrace.lg(("points rotated %.0f deg bounds:" % mapRotate)
+                      + "ulLat=%.6f ulLong=%.6f lrLat=%.6f lrLong=%.6f" %
+                      (ulLat, ulLong,  lrLat, lrLong))
+                
+                height = gDistance((ulLat, ulLong), (lrLat, ulLong))*1000
+                width = gDistance((ulLat, ulLong), (ulLat, lrLong))*1000
+                diagonal = gDistance((ulLat, ulLong), (lrLat, lrLong))*1000
+                SlTrace.lg("points rotated %.0f deg bounds(meters):" % (mapRotate)
+                      + "height=%.6g width=%.6g diagonal=%.6g" %
+                      (height, width, diagonal))
+            else:
+                if xDim is not None:
+                    if yDim is None:
+                        yDim = xDim
+                    if lrLat is not None or lrLong is not None:
+                        raise SelectError(f"xDim present - can't have lrLat({lrLat}, lrLong({lrLong})")
+                latDist = -yDim     # y increases downward, lat increases upward
+                longDist = xDim     # x increases rightward, longitude increases(less negative) rightward
+                lrLat, lrLong = geoMove((ulLat,ulLong), latDist=latDist, longDist=longDist)
+            self.ulLat = ulLat
+            self.ulLong = ulLong
+            self.lrLat = lrLat
+            self.lrLong = lrLong
+            SlTrace.lg("GogleMapImage: ulLat=%.5f ulLong=%.5f lrLat=%.5f lrLong=%.5f" %
+                                (ulLat, ulLong, lrLat, lrLong))
+            SlTrace.lg("             corner to corner:= %.2f meters" %
+                                 geoDistance(latLong=(ulLat, ulLong), latLong2=(lrLat, lrLong)))
+            
+            if scale is None:
+                scale = 1
+            self.scale = scale
+            
+            if maxSize is not None:
+                xSize = ySize = maxSize
+            else:
+                if xSize is None:
+                    xSize = 640
+                if ySize is None:
+                    ySize = 640
+            self.xSize = xSize
+            self.ySize = ySize
+            if file is None:
+                file = self.makeFileName()
+            self.file = file                # Save name, if specified
+     
+            self.image = self.getImage()
         self.geoDraw = GeoDraw(self.image,
                                ulLat=self.ulLat, ulLong=self.ulLong,
                                lrLat=self.lrLat, lrLong=self.lrLong,
@@ -353,6 +429,11 @@ class GoogleMapImage:
         full_path = os.path.abspath(rel_path)
         return full_path
 
+    def get_ref_latLong(self):
+        """ Get reference latitude, longitude generally uper left corner (corresponds to 0,0 on image
+        :returns: (latitude, longitude pair)
+        """
+        return (self.ulLat, self.ulLong)
 
     def makeInfoName(self, imageName=None):
         """
@@ -395,6 +476,27 @@ class GoogleMapImage:
     def addTitle(self, title, xY=None, size=None, color=None, **kwargs):
         self.geoDraw.addTitle(title, xY=xY, size=size, color=color, **kwargs)
 
+    def getCenter(self, ctype='LL', unit='m', ref_latLong=None):
+        """ Get center of plot
+        :type: type of center 'll' - long,lat, 'pos' - physical location relative to ref,
+                            'xY' - pixel
+                            default: 'll'
+        :returns: tuple of 'll', 'pos', 'xy'
+        """
+        ctype = ctype.lower()
+        unit = unit.lower()[0]
+        if ref_latLong is None:
+            ref_latLong = self.get_ref_latLong()
+        ll_cent = (self.ulLat+self.lrLat)/2, (self.ulLong+self.lrLong)/2
+        if ctype == 'll':
+            return ll_cent
+
+        if ctype == "pos":
+            return self.getPos(latLong=ll_cent, unit=unit, ref_latLong=ref_latLong)
+        
+        if ctype == "xy":
+            return self.getXY(latLong=ll_cent)        
+
     def getHeight(self):
         return self.geoDraw.getHeight()
 
@@ -410,6 +512,32 @@ class GoogleMapImage:
         to pixel location
         """
         return self.geoDraw.getXY(latLong=latLong, pos=pos, xY=xY)
+
+    def getPos(self, latLong=None, pos=None, xY=None, unit='m', ref_latLong=None):
+        """
+        Get/Convert location pixel, longitude, physical location/specification
+        to position in meters,yards, or feet
+        :latLong: latitude,longitude pair
+        :pos: x,y position pair in meters
+        :xY: x,y position pair in pixels
+        :unit: output distance units meter, yard, feet
+            default: m(eter)
+        :orig_latLong: if present, give position relative to reference
+                    latitude, longitude
+        :returns: x,y position in unit
+        """
+
+        return self.geoDraw.getPos(latLong=latLong, pos=pos, xY=xY, unit=unit, ref_latLong=ref_latLong)
+
+    
+    def geoDist(self, latLong=None, latLong2=None, unit='m'):
+        """ Access to lat,long to distance
+        :latLong: starting latitude,longitude pair
+        :latLong2: ending latitude, longitued pair
+        :unit: distance units name string feet, meter, yard
+                default: m(eter)
+        """
+        return self.geoDraw.geoDist(latLong=latLong, latLong2=latLong2, unit=unit)
 
 
         
@@ -443,10 +571,11 @@ class GoogleMapImage:
             self.imageInfo['lrLong'] = lrLong
             self.imageInfo['mapRotate'] = self.mapRotate
             SlTrace.lg("image width=%.2f height=%.2f" % (self.image.width, self.image.height))
+            rotate = 0 if self.imageInfo['mapRotate'] is None else self.imageInfo['mapRotate']
             SlTrace.lg("File image: ulLat:%.6f ulLong %.6f lrLat:%.6f lrLong %.6f mapRotate %.0f" %
                         (self.imageInfo['ulLat'], self.imageInfo['ulLong'],
                          self.imageInfo['lrLat'], self.imageInfo['lrLong'],
-                         self.imageInfo['mapRotate']))
+                         rotate))
                    
             self.save()
         SlTrace.lg("image width=%.2f height=%.2f" % (self.image.width, self.image.height))
@@ -566,8 +695,8 @@ class GoogleMapImage:
                     
         zoom = self.zoom
         scale = self.scale
-        ulx, uly = latlontopixels(ullat, ullon, zoom)
-        lrx, lry = latlontopixels(lrlat, lrlon, zoom)
+        ulx, uly = geo_latlontopixels(ullat, ullon, zoom)
+        lrx, lry = geo_latlontopixels(lrlat, lrlon, zoom)
         dx, dy = abs(lrx - ulx), abs(uly - lry)
         cols, rows = int(ceil(dx/self.xSize)), int(ceil(dy/self.ySize))
         SlTrace.lg("cols=%d rows=%d" % (cols,rows))
@@ -586,7 +715,7 @@ class GoogleMapImage:
                 SlTrace.lg("y=%d" % y)
                 dxn = largura * (0.5 + x)
                 dyn = altura * (0.5 + y)
-                latn, lonn = pixelstolatlon(ulx + dxn, uly - dyn - bottom/2, zoom)
+                latn, lonn = geo_pixelstolatlon(ulx + dxn, uly - dyn - bottom/2, zoom)
                 position = ','.join((str(latn), str(lonn)))
                 SlTrace.lg(f"{x} {y} {position}")
                 urlparams = urllib.parse.urlencode({'center': position,
@@ -742,6 +871,22 @@ class GoogleMapImage:
         y_size = self.latSize()/360. * EQUATOR_CIRCUMFERENCE
         return y_size
 
+    def fract2latlong(self, xy_fract):
+        """ Convert x,y fraction pair to latitute,longitude pair
+        :xy_fract: (x-fraction of span, y-fraction of span)
+        :returns: (latitude, longitude)
+            Note: we recognize x goes sideways, latitude goes up and down
+                  but we generally talk x,y and lat, long or that's what we had heard
+        """
+        x_fract, y_fract = xy_fract
+        ul_long = self.ulLong
+        lr_long = self.lrLong
+        ul_long2 = ul_long + x_fract*(ul_long-lr_long)
+        
+        ul_lat = self.ulLat
+        lr_lat = self.lrLat
+        ul_lat2 = ul_lat + y_fract*(ul_lat-lr_lat)
+        return (ul_lat2, ul_long2)
 
     def latLonToImage(self, lat=None, long=None):
         """
@@ -757,6 +902,20 @@ class GoogleMapImage:
         lat_size = self.latSize()
         y_size = self.image.height
         ypix = y_size - lat_chg/lat_size * y_size    # yincreases down
+        return xpix, ypix
+
+    def latLonToXYm(self, lat=None, long=None, unit='m'):
+        """
+        Convert latitude, longitude to xy offset in meters
+        Returning x,y pair
+        :lat: latitude in deg
+        :long: longitude in deg
+        :unit: output units 'm', 'y', 'f'
+                default: 'm' meters
+        :returns: x,y in units
+        """
+        xpix, ypix = self.latlonToImage(lat=lat, long=long)
+        xmeter = xpix/self.image.width
         return xpix, ypix
 
 
@@ -813,6 +972,15 @@ class GoogleMapImage:
         
         return lat_chg, long_chg
 
+
+
+    def pixelToLatLong(self, xY):
+        """
+        Convert  pixel x,y to latitude, longitude
+        Assumes if map is rotated, then x,y is rotated before translation
+        Returning x,y pair
+        """
+        return self.geoDraw.pixelToLatLong(xY)
 
     def addScale(self, **kwargs):
         """

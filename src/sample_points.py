@@ -12,7 +12,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 from select_trace import SlTrace
 from GoogleMapImage import GoogleMapImage, geoDistance
-from scrollableimage import ScrolledCanvas 
+from scrolled_canvas import ScrolledCanvas 
 
 adjWidthForSize = True       # widen lines to aid visibility on large images
 mapRotate = 45.
@@ -154,7 +154,7 @@ for key in limit_pointh.keys():
     point = pointh[plot]
     pm = re.match("T(\d+)P(\d+)", plot)
     if pm is not None:
-        plot_key = plot_key = f"{pm.group(1)}-{pm.group(2)}"
+        plot_key = f"{pm.group(1)}-{pm.group(2)}"
     else:
         plot_key = plot
     SlTrace.lg("%-8s %s  Longitude: %.5f latitude: %.5f" % (key, plot_key, point['long'], point['lat']))
@@ -164,7 +164,7 @@ Plot using points, mapRotate, and mapBorder as guide
 """
 
 gmi = GoogleMapImage( mapPoints=points,
-                      mapBorderM=20,
+                      mapBorderM=400,
                       showSampleLL=showSampleLL,
                       scale=scale,
                       forceNew=forceNew,
@@ -264,11 +264,23 @@ now = datetime.datetime.now().strftime("%b %d %Y %H:%M:%S")
 
 title = "rotate = %.2f\n%s" % (rotate, now)
 gmi.addTitle(title)
+
+tennis_court = True
+if tennis_court:
+    gd = gmi.geoDraw
+    ptc = gmi.getXY(latLong=(42.37332, -71.18349))
+    th_deg = -mapRotate+8.0
+    nw_corner_1 = gd.addToPoint(xY=ptc, leng=gd.meterToPixel(110), deg=th_deg)
+    nw_corner = gd.addToPoint(xY=nw_corner_1, leng=gd.meterToPixel(54), deg=th_deg+90)
+    ###pthird = gd.addToPoint(xY=pthird, leng=gd.meterToPixel(0.182), deg=th_deg)
+    gmi.addScale(xY=nw_corner, deg=th_deg, unitName='f', leng=gd.meterToPixel(100), tic_dir=-1)
+
+
 third_to_home = True
 if third_to_home:
     gd = gmi.geoDraw
     p3_1 = gmi.getXY(latLong=(42.37332, -71.18349))
-    th_deg = -mapRotate+9.5
+    th_deg = -mapRotate+9.3
     pthird = gd.addToPoint(xY=p3_1, leng=gd.meterToPixel(45.85), deg=90-6.4-mapRotate)
     pthird = gd.addToPoint(xY=pthird, leng=gd.meterToPixel(0.182), deg=th_deg)
     gmi.addScale(xY=pthird, deg=th_deg, unitName='f', leng=gd.meterToPixel(50), tic_dir=-1)

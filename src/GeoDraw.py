@@ -11,6 +11,8 @@ from openpyxl.drawing.effect import Color
 from idlelib.colorizer import color_config
 from pandas._libs.tslibs.offsets import get_firstbday
 
+from select_trace import SlTrace
+
 EARTH_RADIUS = 6378137.
 EQUATOR_CIRCUMFERENCE = 2 * pi * EARTH_RADIUS
 
@@ -66,7 +68,7 @@ def geoDistance(latLong=None, latLong2=None):
 def geoMove(latLong=None, latDist=0, longDist=0):
     """
     Compute new latatitude, longitude location given
-    original latatitude, longitude plus distance in lat, long directions in meters
+    original latatitude, longitude plus distance in lat(south), long(east) directions in meters
     Developed from geoDistance
     :returns latitude, longitude   pair
     """
@@ -113,7 +115,8 @@ class GeoDraw:
     """
     Setup geographic map annotation facility
     For simplicity, internal locations are kept as floating point xy pixels
-    and radians.
+    Physical locations are kept as Latitude, Logitude pairs but can be converted
+        to image x,y pixels
     
     :image - PIL compatible image
     :ulLat - Map's Upper left corner latitude
@@ -151,7 +154,7 @@ class GeoDraw:
         self.showSampleLL = showSampleLL
             
         if image is None:
-           image = Image.new("RGB", 400, 200)
+            image = Image.new("RGB", 400, 200)
         self.setImage(image)
         ulmx = 0.
         ulmy = 0.
@@ -197,9 +200,10 @@ class GeoDraw:
             lat_rad = lat_avg*pi/180.
             lrX = ulX + cos(lat_rad) * (self.lrLong-self.ulLong) / 360. * EQUATOR_CIRCUMFERENCE
             lrY = ulY + (self.ulLat-self.lrLat) / 360. * EQUATOR_CIRCUMFERENCE
-        
-        print("Distance coordinates(meters):\n\tUpper Left x:%.0f y:%.0f\n\tLower Right x: %.0f y:%.0f"
-              % (ulX, ulY, lrX, lrY))    
+        SlTrace.lg(f"Loaded Image: width:{self.getWidth()} height:{self.getHeight()}")
+        SlTrace.lg(f"Distance coordinates(meters):"
+              f"\n\tUpper Left x:{ulX:.1f} y:{ulY:.1f}"
+              f"\n\tLower Right x: {lrX:.1f} y: {lrY:.1f}")
         self.ulX = ulX
         self.ulY = ulY
         self.lrX = lrX
@@ -218,7 +222,8 @@ class GeoDraw:
         self.draw = ImageDraw.Draw(self.image)      # Setup ImageDraw access
         
 
-    def boundLatLong(points=None, mapRotate=None,
+    @classmethod
+    def boundLatLong(cls, points=None, mapRotate=None,
                     borderM=None, borderD=None, borderP=None):
         """
         Calculate a vertical bounding box containing the provided points on a rotated map,
@@ -243,7 +248,7 @@ class GeoDraw:
         Use GeoDraw to to the arithmetic lat,Long - x,y
         """
         
-        limits_lat_long, limit_pointh = GeoDraw.limitsLatLong(points=points, rotate=mapRotate)
+        limits_lat_long, _ = GeoDraw.limitsLatLong(points=points, rotate=mapRotate)
         ulLat = limits_lat_long['max_lat']
         ulLong = limits_lat_long['min_long']
         lrLat = limits_lat_long['min_lat']
@@ -253,7 +258,15 @@ class GeoDraw:
         gd_image = Image.new("RGB", (100, 100))
         gd = GeoDraw(gd_image, ulLat=ulLat, ulLong=ulLong, lrLat=lrLat, lrLong=lrLong,
                       mapRotate=mapRotate)     # simple strait up
-        
+        #HACK because our stuf doesn't work
+        if borderM is not None:
+            deg_chg = borderM*.3/(70*5280.)
+            ulLat -= deg_chg
+            ulLong -= deg_chg
+            lrLat -= deg_chg
+            lrLong += deg_chg
+            return (ulLat,ulLong), (lrLat,lrLong)
+            
  ###TBD
         nb_spec = 0
         if borderM is not None:
@@ -266,13 +279,13 @@ class GeoDraw:
             nb_spec += 1
             border = borderP
         if nb_spec == 0:
-            border = gd.meterToPixel(10.)
+            border = gd.meterToPixel(100.)
         if nb_spec > 1:
             raise GMIError("Can't use more than one of borderM, borderD, borderP")
         
         ulLatLong1 = (ulLat, ulLong)
         lrLatLong1 = (lrLat, lrLong)
-        if border is not None and border > 0 and False:       #TFD - to avoid border
+        if border is not None and border > 0:
             ulXY2 = gd.addToPoint(latLong=ulLatLong1, leng=border, deg=-180)
             ulXY2 = gd.addToPoint(xY=ulXY2, leng=border, deg=90)
             ulLatLong1 = gd.getLatLong(xY=ulXY2)
@@ -291,7 +304,7 @@ class GeoDraw:
                                     )
         return ulLatLong1, lrLatLong1
 
-        
+    @staticmethod    
     def limitsLatLong(points, rotate):
         """
         Given point pairs lat,long, calculate max, min and
@@ -474,12 +487,15 @@ class GeoDraw:
         plot_radius = 10.
         plot_radius_pixel = self.meterToPixel(plot_radius)
         if plot_key == "TBM":
-            width = 3
-            self.circle(xY=xY, radius=plot_radius_pixel, fill="#adf0f5")
+            radius_pixel = self.meterToPixel(plot_radius*.25)
+            self.circle(xY=xY, radius=radius_pixel, fill="#adf0f5")
             latlong_size *= 2
+            label_xy = self.addToPoint(xY=xY, leng=1.5*label_size, deg=75)
+            self.text(plot_id, xY=label_xy,  font=label_font, fill=label_color)
         else:    
             self.circle(xY=xY, radius=plot_radius_pixel, fill=plot_color)
-            width = None
+            label_xy = self.addToPoint(xY=xY, leng=1.5*label_size, deg=75)
+            self.text(plot_id, xY=label_xy,  font=label_font, fill=label_color)
         
         cent_color = (255,0,0)
         cent_radius = 1
@@ -487,8 +503,6 @@ class GeoDraw:
         self.circle(xY=xY, radius=cent_radius_pixel, fill=cent_color)
         # get a font
         # use a truetype font
-        label_xy = self.addToPoint(xY=xY, leng=1.5*label_size, deg=75)
-        self.text(plot_id, xY=label_xy,  font=label_font, fill=label_color)
         if self.showSampleLL:
             latlong_size = int(latlong_size)
             loc_string = "%.5f\n%.5f" % (long, lat)
@@ -580,12 +594,12 @@ class GeoDraw:
             
         if np1_spec > 1:
             raise GMIError("Only one of xY, pos, latLong is allowed")
-        
-        if unitName.lower() == 'f':
+        uname = unitName.lower()[0]
+        if uname  == 'f':
             unitLen = .3048
-        elif unitName.lower() == 'm':
+        elif uname == 'm':
             unitLen = 1.
-        elif unitName.lower() == 'y':
+        elif uname == 'y':
             unitLen = .3048*3
         else:
             raise GMIError("Unrecognized unit name '%s' choose m or f" % unitName)
@@ -658,7 +672,7 @@ class GeoDraw:
                 print("mark_n: %d scale_pos: %.2f scale_xY: %s" %
                       (mark_n, scale_pos, scale_xY))
             
-            scale_pos += tic_space
+            scale_pos = mark_n * tic_space
                 
             scale_xY = self.addToPoint(xY=scale_xY, leng=tic_space_pixel, deg=scale_deg)
         pass
@@ -781,11 +795,23 @@ class GeoDraw:
 
 
     
-    """
-    Access to lat,long to distance
-    """
-    def geoDist(self, latLong=None, latLong2=None):
-        return geoDistance(latLong=latLong, latLong2=latLong2)
+    def geoDist(self, latLong=None, latLong2=None, unit='m'):
+        """ Access to lat,long to distance
+        :latLong: starting latitude,longitude pair
+        :latLong2: ending latitude, longitued pair
+        :unit: distance units name string feet, meter, yard
+                default: m(eter)
+        """
+        uname = unit.lower()[0]
+        if uname  == 'f':
+            unitLen = .3048
+        elif uname == 'm':
+            unitLen = 1.
+        elif uname == 'y':
+            unitLen = .3048*3
+        gdist = geoDistance(latLong=latLong, latLong2=latLong2)
+
+        return gdist/unitLen
 
 
 
@@ -813,13 +839,39 @@ class GeoDraw:
         return latLong
 
 
-    def getPos(self, latLong=None, pos=None, xY=None):
+    def getPos(self, latLong=None, pos=None, xY=None, unit='m', ref_latLong=None):
         """
         Get/Convert location pixel, longitude, physical location/specification
-        to position in meters
+        to position in meters,yards, or feet
+        :latLong: latitude,longitude pair
+        :pos: x,y position pair in meters
+        :xY: x,y position pair in pixels
+        :unit: output distance units meter, yard, feet
+            default: m(eter)
+        :orig_latLong: if present, give position relative to reference
+                    latitude, longitude
+        :returns: x,y position in unit
         """
+        
         xY = self.getXY(latLong=latLong, pos=pos, xY=xY)
-        return self.mxToMeter(xY[0]), self.myToMeter(xY[1])
+        uname = unit.lower()[0]
+        if uname  == 'f':
+            unitLen = .3048
+        elif uname == 'm':
+            unitLen = 1.
+        elif uname == 'y':
+            unitLen = .3048*3
+        x_meter = self.mxToMeter(xY[0])
+        y_meter = self.myToMeter(xY[1])
+        if ref_latLong is not None:
+            ref_xY = self.getXY(latLong=ref_latLong)
+            ref_x_meter = self.mxToMeter(ref_xY[0])
+            ref_y_meter = self.myToMeter(ref_xY[1])
+            x_meter -= ref_x_meter
+            y_meter -= ref_y_meter
+        x_out = x_meter/unitLen
+        y_out = y_meter/unitLen
+        return x_out, y_out 
     
 
     def getXY(self, latLong=None, pos=None, xY=None):
@@ -856,11 +908,13 @@ class GeoDraw:
         Returning x,y pair
         """
         if latLong is None:
-            raise GMIError("latlongToPixel: latLong required")
-        lat_offset = self.ulLat - latLong[0]        # from upper left corner
-        long_offset = latLong[1] - self.ulLong
-        mx = long_offset/(self.lrLong-self.ulLong)*self.getWidth()
-        my = lat_offset/(self.ulLat-self.lrLat)*self.getHeight()
+            raise GMIError("latlongToPixel: latLong required");
+        lat = latLong[0]
+        long = latLong[1]
+        lat_offset = lat - self.ulLat         # from upper left corner - - increase down
+        long_offset = long - self.ulLong      # increase left to right
+        mx = long_offset/(self.lrLong-self.ulLong)*self.getWidth()      # increase left to right
+        my = lat_offset/(self.lrLat-self.ulLat)*self.getHeight()        # increase ulLat: upper(less) to lrLat: lower(bigger)
         if self.mapRotate is not None:
             mapTheta = -deg2rad(self.mapRotate)
             # Translate to center of image
