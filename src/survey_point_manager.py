@@ -75,7 +75,7 @@ class SurveyPointManager:
         :canvas_x: canvas x-coordinate
         :canvas_y: canvas y-coordinate
         """
-        SlTrace.lg(f"mouse_down: canvas_x={canvas_x:.0f} canvas_y={canvas_y:.0f}")
+        SlTrace.lg(f"mouse_down: canvas_x={canvas_x:.0f} canvas_y={canvas_y:.0f}", "mouse")
         point = self.get_in(canvas_x, canvas_y)
         if point is not None:
             self.in_point_is_down = True
@@ -110,8 +110,8 @@ class SurveyPointManager:
         :canvas_x: canvas x-coordinate
         :canvas_y: canvas y-coordinate
         """
-        if self.doing_mouse_motion:
-            return          # Block multiple calls
+        ###if self.doing_mouse_motion:
+        ###    return          # Block multiple calls
 
         
         self.doing_mouse_motion = True
@@ -131,7 +131,7 @@ class SurveyPointManager:
         else:
             if self.track_sc:
                 self.sc_track_update(canvas_x, canvas_y)
-        self.doing_mouse_motion = False
+        ###self.doing_mouse_motion = False
         
     def sc_track_update(self, canvas_x, canvas_y):
         """ Update sc tracking display
@@ -139,7 +139,10 @@ class SurveyPointManager:
         :canvas_y:  y-coordinate
         """
         self.sc_point_place.motion_update(canvas_x, canvas_y)
-                
+
+    def change_unit(self, unit):
+        self.sc_point_place.change_unit(unit)
+                        
     def add_point(self, point):
         """ Add new point to list
         Checks for unique name - error if pre-existing named point

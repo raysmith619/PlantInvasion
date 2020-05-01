@@ -12,8 +12,9 @@ class CanvasCoords:
     """
     def __init__(self, sc, canvas_x=None, canvas_y=None,
              lat=None, long=None,
-             x_meter=None, y_meter=None,
-             x_image=None, y_image=None):
+             x_dist=None, y_dist=None,
+             x_image=None, y_image=None,
+             unit="m"):
         """convert canvas coordinates to the others
         TBD: do the other directions too
         """
@@ -22,8 +23,9 @@ class CanvasCoords:
         gmi = sc.gmi
         self.x_image, self.y_image = sc.canvas2image(canvas_x, canvas_y)
         self.lat, self.long = gmi.pixelToLatLong((self.x_image, self.y_image))
-        self.x_meter, self.y_meter = gmi.getPos(xY=(self.x_image, self.y_image),
-                                                      ref_latLong=gmi.get_ref_latLong())
+        self.x_dist, self.y_dist = gmi.getPos(xY=(self.x_image, self.y_image),
+                                              ref_latLong=gmi.get_ref_latLong(),
+                                              unit=unit)
 
 class ScrolledCanvas(Frame):
     def __init__(self, fileName=None, gmi=None, image=None, title=None, parent=None,
@@ -31,13 +33,15 @@ class ScrolledCanvas(Frame):
                  mouse_down_call=None,
                  mouse_double_down_call=None,
                  mouse_up_call=None,
-                 mouse_move_call=None):
+                 mouse_move_call=None,
+                 ):
         """
         :fileName - image file, if present or info file if ending with .imageinfo else
         :gmi: GoogleMapImage, if present
         :image - image, if present
         :mouse_down_call: if present, function to call with x,y canvas coordinates
         :mouse_move_call: if present, function to call with x,y canvas coordinates on mouse motion
+        :unit: Linear distance unit m(eter), y(ard), f(oot) - default: "m" - meter
         """
         self.isDown = False
         self.inside = False

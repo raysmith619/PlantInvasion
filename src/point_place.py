@@ -6,13 +6,13 @@ Provides an updated positioning information of the points position
 from tkinter import *
 
 from select_trace import SlTrace
-
+from scrolled_canvas import CanvasCoords
 
 class PointPlace(Toplevel):
     # Display point position annotation
     SHOW_POINT_NONE = 1
     SHOW_POINT_LL = 2
-    SHOW_POINT_METER = 3
+    SHOW_POINT_DIST = 3
     SHOW_POINT_PIXEL = 4
 
     ROW_TITLE = 0
@@ -29,18 +29,18 @@ class PointPlace(Toplevel):
     ROW_LL_SET = ROW_LAT
     COL_LL_SET = COL_LONG + 1
 
-    ROW_X_METER = ROW_LAT + 1
-    COL_X_METER_LABEL = COL_LAT_LABEL
-    COL_X_METER = COL_X_METER_LABEL+1
+    ROW_X_LINEAR = ROW_LAT + 1
+    COL_X_LINEAR_LABEL = COL_LAT_LABEL
+    COL_X_LINEAR = COL_X_LINEAR_LABEL+1
     
-    ROW_Y_METER = ROW_X_METER
-    COL_Y_METER_LABEL = COL_LONG_LABEL
-    COL_Y_METER = COL_Y_METER_LABEL + 1
+    ROW_Y_LINEAR = ROW_X_LINEAR
+    COL_Y_LINEAR_LABEL = COL_LONG_LABEL
+    COL_Y_LINEAR = COL_Y_LINEAR_LABEL + 1
     
-    ROW_XY_METER_SET = ROW_X_METER
-    COL_XY_METER_SET = COL_Y_METER + 1
+    ROW_XY_LINEAR_SET = ROW_X_LINEAR
+    COL_XY_LINEAR_SET = COL_Y_LINEAR + 1
 
-    ROW_X_PIXEL = ROW_X_METER + 1
+    ROW_X_PIXEL = ROW_X_LINEAR + 1
     COL_X_PIXEL_LABEL = COL_LAT_LABEL
     COL_X_PIXEL = COL_X_PIXEL_LABEL+1
     
@@ -74,6 +74,7 @@ class PointPlace(Toplevel):
                  size=None,
                  lat_long=None,
                  track_sc=False,
+                 unit="f"       # Folksey
                  ):
         
         
@@ -85,19 +86,22 @@ class PointPlace(Toplevel):
         :size: form size (width, hight) in in pixels of window
         :lat_long: optional starting point latitude, longitude
         :track_sc: Update, based on mouse motion, till Add Point clicked
+        :unit: linear length unit m,y,f default: f
         """
-        self.mt_width = 10              # meter form entry width (char)
+        self.dis_width = 10              # linear form entry width (char)
         self.px_width = 5               # pixel form entry width (char)
         self.ll_width = 11              # long/lat form entry width (char)
         self.px_fmt = ".0f"             # pixel format
         self.ll_fmt = ".7f"             # longitude/latitude format
-        self.mt_fmt = ".3f"             # meter format
+        self.dis_fmt = ".3f"             # linear format
         self.ref_latLong = None         # Set to reference location when image is loaded
-        self.show_point = PointPlace.SHOW_POINT_METER
+        self.show_point = PointPlace.SHOW_POINT_DIST
         self.show_point_tag = None      # show point text tag
-        self.ctls_vars = {}      # var By field
-        self.ctls_ctls = {}      # ctl By field
+        self.ctls_vars = {}             # var By field   NOTE: This duplicates support in SelectControlWindow
+        self.ctls_ctls = {}             # ctl By field
+        self.ctls_labels = {}
         self.track_sc = track_sc
+        self.unit = unit
         self.tracking_sc = track_sc     # cleared when done
         self.standalone = False
         self.motion_update2 = None     # Used if sc already has a motion call
@@ -141,24 +145,26 @@ class PointPlace(Toplevel):
         self.ctls_ctls[field] = button = Button(ctl_frame, text="SET")
         button.grid(row=PointPlace.ROW_LL_SET, column=PointPlace.COL_LL_SET)
         
-        field = "x_meter"
-        width = self.mt_width    
+        field = "x_dist"
+        width = self.dis_width    
         self.ctls_vars[field] = content = StringVar()
-        Label(master=ctl_frame, text="x(meters)").grid(row=PointPlace.ROW_X_METER, column=PointPlace.COL_X_METER_LABEL)
+        self.ctls_labels[field] = label = Label(master=ctl_frame, text=f"x({self.unit})")
+        label.grid(row=PointPlace.ROW_X_LINEAR, column=PointPlace.COL_X_LINEAR_LABEL)
         self.ctls_ctls[field] = entry = Entry(ctl_frame, textvariable=content, width=width, text="")
-        entry.grid(row=PointPlace.ROW_X_METER, column=PointPlace.COL_X_METER, sticky=W)
+        entry.grid(row=PointPlace.ROW_X_LINEAR, column=PointPlace.COL_X_LINEAR, sticky=W)
         
-        field = "y_meter"
-        width = self.mt_width
+        field = "y_dist"
+        width = self.dis_width
         self.ctls_vars[field] = content = StringVar()
-        Label(master=ctl_frame, text="y(meters)").grid(row=PointPlace.ROW_Y_METER, column=PointPlace.COL_Y_METER_LABEL)
+        self.ctls_labels[field] = label = Label(master=ctl_frame, text=f"y({self.unit})")
+        label.grid(row=PointPlace.ROW_Y_LINEAR, column=PointPlace.COL_Y_LINEAR_LABEL)
         self.ctls_ctls[field] = entry = Entry(ctl_frame, textvariable=content, width=width, text="")
-        entry.grid(row=PointPlace.ROW_Y_METER, column=PointPlace.COL_Y_METER, sticky=W)
+        entry.grid(row=PointPlace.ROW_Y_LINEAR, column=PointPlace.COL_Y_LINEAR, sticky=W)
         
-        field = "set_xy_meter"
+        field = "set_xy_dist"
         self.ctls_vars[field] = content = StringVar()
         self.ctls_ctls[field] = button = Button(ctl_frame, text="SET")
-        button.grid(row=PointPlace.ROW_XY_METER_SET, column=PointPlace.COL_XY_METER_SET)
+        button.grid(row=PointPlace.ROW_XY_LINEAR_SET, column=PointPlace.COL_XY_LINEAR_SET)
             
         field = "x_pixel"
         width = self.px_width
@@ -267,17 +273,13 @@ class PointPlace(Toplevel):
         char_size = 7
         text_fill = "white"
         text_size = 12
-                
-        x_image, y_image = self.canvas2image(x_pixel, y_pixel)
-        
+        pcs = CanvasCoords(self.sc, canvas_x=x_pixel, canvas_y=y_pixel, unit=self.unit)        
         if self.show_point == PointPlace.SHOW_POINT_LL:
-            lat_long = self.gmi.pixelToLatLong((x_image, y_image))
-            text = f"({lat_long[0]:{self.ll_fmt}}Lat, {lat_long[1]:{self.ll_fmt}}Long)"
-        elif self.show_point == PointPlace.SHOW_POINT_METER:
-            x_meter, y_meter = self.gmi.getPos(xY=(x_image, y_image), ref_latLong=self.ref_latLong)
-            text = f"({x_meter:{self.mt_fmt}}m, {y_meter:{self.mt_fmt}}m)"
+            text = f"({pcs.lat:{self.ll_fmt}}Lat, {pcs.long:{self.ll_fmt}}Long)"
+        elif self.show_point == PointPlace.SHOW_POINT_DIST:
+            text = f"({pcs.x_dist:{self.dis_fmt}}{self.unit}, {pcs.y_dist:{self.dis_fmt}}{self.unit})"
         elif self.show_point == PointPlace.SHOW_POINT_PIXEL:
-            text = f"({x_image:{self.px_fmt}}, {y_image:{self.px_fmt}})"
+            text = f"({pcs.x_image:{self.px_fmt}}, {pcs.y_image:{self.px_fmt}})"
         else:
             text = f"({x_pixel}, {y_pixel} ??)"
         
@@ -295,6 +297,15 @@ class PointPlace(Toplevel):
             
         self.show_point_tag = canvas.create_text(text_pos, text=text, fill=text_fill)
 
+    def change_unit(self, unit):
+        """ Change linear unit, including label display
+        :unit:  unit measure
+        """
+        self.unit = unit
+        self.set_ctl_label("x_dist", f"x({unit})")
+        self.set_ctl_label("y_dist", f"y({unit})")
+        self.update_coords()
+        
     def canvas2image(self, x_pixel, y_pixel):
         return self.sc.canvas2image(x_pixel, y_pixel)
 
@@ -314,7 +325,7 @@ class PointPlace(Toplevel):
         lat_long = self.gmi.pixelToLatLong((x_image, y_image))
         self.set_lat_long(lat_long)
         
-    def set_ctl_val(self, field, val, fmt=".3"):
+    def set_ctl_val(self, field, val, fmt=".3"):   # NOTE: This duplicates support in SelectControlWindow
         """ Set value
         """
         setattr(self, field, val)               # Set internal value
@@ -325,19 +336,41 @@ class PointPlace(Toplevel):
         fmt_str = f"{val:{fmt}}"
         ctl_ctl.insert(0, f"{fmt_str}")
         
+    def set_ctl_label(self, field, label):
+        """ Set field's associated label, if one
+        """
+        if field in self.ctls_labels:
+            ctl_label = self.ctls_labels[field]
+            ctl_label.config(text=label)
+        else:
+            SlTrace.report(f"field({field}) not present - label={label}")
+            
     def set_lat_long(self, lat_long):
         """ Set latitude, longitude
         :lat_long: latitude,logitude (deg) pair
         """
-        self.lat = lat_long[0]
-        self.long = lat_long[1]
-        self.set_ctl_val("latitude", lat_long[0], self.ll_fmt)
-        self.set_ctl_val("longitude", lat_long[1], self.ll_fmt)
+        self.update_coords(lat=lat_long[0], long=lat_long[1])
+        
+    def update_coords(self, lat=None, long=None):
+        """ Update coords, refreshing displays
+        :lat: latitude, default=use current (self.lat)
+        :long: longitude default=use current (self.long
+        """
+        if lat is None:
+            lat = self.lat
+        if long is None:
+            long = self.long
+            
+        self.lat = lat
+        self.long = long
+        self.set_ctl_val("latitude", self.lat, self.ll_fmt)
+        self.set_ctl_val("longitude", self.long, self.ll_fmt)
         if self.gmi is not None:
-            x_meter, y_meter = self.gmi.getPos(latLong=lat_long, ref_latLong=self.ref_latLong)
-            self.set_ctl_val("x_meter", x_meter, self.mt_fmt)
-            self.set_ctl_val("y_meter", y_meter, self.mt_fmt)
-            x_pixel, y_pixel = self.gmi.getXY(latLong=lat_long)
+            x_dist, y_dist = self.gmi.getPos(latLong=(self.lat,self.long), unit=self.unit,
+                                              ref_latLong=self.ref_latLong)
+            self.set_ctl_val("x_dist", x_dist, self.dis_fmt)
+            self.set_ctl_val("y_dist", y_dist, self.dis_fmt)
+            x_pixel, y_pixel = self.gmi.getXY(latLong=(lat,long))
             self.set_ctl_val("x_pixel", x_pixel, self.px_fmt)
             self.set_ctl_val("y_pixel", y_pixel, self.px_fmt)
 

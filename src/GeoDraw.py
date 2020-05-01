@@ -594,15 +594,7 @@ class GeoDraw:
             
         if np1_spec > 1:
             raise GMIError("Only one of xY, pos, latLong is allowed")
-        uname = unitName.lower()[0]
-        if uname  == 'f':
-            unitLen = .3048
-        elif uname == 'm':
-            unitLen = 1.
-        elif uname == 'y':
-            unitLen = .3048*3
-        else:
-            raise GMIError("Unrecognized unit name '%s' choose m or f" % unitName)
+        unitLen = self.unitLen(unitName)
         
         if bigMarks is None:
             bigMarks = 5
@@ -799,16 +791,10 @@ class GeoDraw:
         """ Access to lat,long to distance
         :latLong: starting latitude,longitude pair
         :latLong2: ending latitude, longitued pair
-        :unit: distance units name string feet, meter, yard
+        :unit: distance units name string feet, meter, yard, smoot
                 default: m(eter)
         """
-        uname = unit.lower()[0]
-        if uname  == 'f':
-            unitLen = .3048
-        elif uname == 'm':
-            unitLen = 1.
-        elif uname == 'y':
-            unitLen = .3048*3
+        unitLen = self.unitLen(unit)
         gdist = geoDistance(latLong=latLong, latLong2=latLong2)
 
         return gdist/unitLen
@@ -852,15 +838,8 @@ class GeoDraw:
                     latitude, longitude
         :returns: x,y position in unit
         """
-        
+        unitLen = self.unitLen(unit)
         xY = self.getXY(latLong=latLong, pos=pos, xY=xY)
-        uname = unit.lower()[0]
-        if uname  == 'f':
-            unitLen = .3048
-        elif uname == 'm':
-            unitLen = 1.
-        elif uname == 'y':
-            unitLen = .3048*3
         x_meter = self.mxToMeter(xY[0])
         y_meter = self.myToMeter(xY[1])
         if ref_latLong is not None:
@@ -974,7 +953,26 @@ class GeoDraw:
         mx = self.meterToMx(x_meter - self.ulX)
         my = self.meterToMy(y_meter - self.ulY)
         return mx, my
-        
+
+    def unitLen(self, unit):
+        """ Unit length in meters
+        :unit: unit name (only looks at first letter)
+                feet, meeter, yard, smoot
+        """
+        uname = unit.lower()[0]
+        if uname  == 'f':
+            unitLen = .3048
+        elif uname == 'm':
+            unitLen = 1.
+        elif uname == 'y':
+            unitLen = .3048*3
+        elif uname == "s":      # smoot
+            unitLen = 1.7018
+        else:
+            raise GMIError(f"Unrecognized unit name '{unit}' choose f[oot],m[eter],y, or s")
+
+        return unitLen
+
         
             
     def posToLatLong(self, pos):

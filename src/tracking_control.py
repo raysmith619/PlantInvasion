@@ -25,6 +25,7 @@ class TrackingControl(SelectControlWindow):
                  title=None, control_prefix=None, 
                  central_control=None,
                  tracking_update=None,
+                 unit='f',
                  **kwargs):
         """ Initialize subclassed SelectControlWindow
              Setup score /undo/redo window
@@ -38,6 +39,10 @@ class TrackingControl(SelectControlWindow):
             control_prefix = TrackingControl.CONTROL_NAME_PREFIX
         self.central_control = central_control
         self.tracking_update = tracking_update
+        self.connection_line = True
+        self.connection_ibar = True
+        self.unit = unit
+        self.tracked_items = []
         super().__init__(title=title, control_prefix=control_prefix,
                        **kwargs)
         self.control_display()
@@ -84,16 +89,47 @@ class TrackingControl(SelectControlWindow):
         self.set_entry(field="second_point_name", label="second point", value="P2", width=4)
         self.set_sep()
         self.set_button(field="untrack_points", label="Un-track", command=self.untrack_two_points)
+
+        connection_frame = Frame(controls_frame)
+        self.set_fields(connection_frame, "connection", title="Connection")
+        self.set_check_box(field="line", label="line", value=self.connection_line)
+        self.set_check_box(field="i-bar", label="i-bar", value=self.connection_ibar)
+
+        unit_frame = Frame(controls_frame)
+        self.set_fields(unit_frame, "distance_nits", title="distance units")
+        self.set_radio_button(frame=unit_frame, field="unit", label="meter", command=self.change_unit,
+                               set_value=self.unit)
+        self.set_radio_button(frame=unit_frame, field="unit", label="yard", command=self.change_unit)
+        self.set_radio_button(frame=unit_frame, field="unit", label="foot", command=self.change_unit)
+        self.set_radio_button(frame=unit_frame, field="unit", label="Smoot", command=self.change_unit)
         
         self.arrange_windows()
         if not self.display:
             self.hide_window()
+    
+    def set_unit_meter(self):
+        self.change_unit("m")
+    
+    def set_unit_foot(self):
+        self.change_unit("f")
+    
+    def set_unit_yard(self):
+        self.change_unit("y")
 
+    def change_unit(self, unit=None):
+        if unit is None:
+            unit = self.unit
+        else:
+            self.unit = unit
+        self.mgr.change_unit(unit)
+        for tracked_item in self.tracked_items:
+            tracked_item.change_unit(unit)
+                    
     def track_one_point(self):
         self.report("track_one_point")
 
     def untrack_one_point(self):
-        self.report("untrack_one_point")
+        self.report("untrack_one_point TBD")
 
     def track_two_points(self):
         p1 = self.get_val_from_ctl("two_points.first_point_name")
@@ -116,8 +152,9 @@ class TrackingControl(SelectControlWindow):
             self.report("Second point named {p2} is not on the map")
             return
         SlTrace.lg(f"track_two_points: {p1}-{p2}")
-        pp2 = PointPlaceTwo(self.mgr.sc, title=f"Tracking:{p1}-{p2}", point1=point1, point2=point2)
-        
+        pp2 = PointPlaceTwo(self.mgr.sc, title=f"Tracking:{p1}-{p2}", point1=point1, point2=point2,
+                            unit=self.unit)
+        self.tracked_items.append(pp2)
         
 
     def untrack_two_points(self):
