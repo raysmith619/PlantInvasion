@@ -5,6 +5,7 @@ from tkinter import *
 import os
 
 from select_trace import SlTrace
+from select_error import SelectError
 from GoogleMapImage import GoogleMapImage
 
 class CanvasCoords:
@@ -34,6 +35,7 @@ class ScrolledCanvas(Frame):
                  mouse_double_down_call=None,
                  mouse_up_call=None,
                  mouse_move_call=None,
+                 unit='m'
                  ):
         """
         :fileName - image file, if present or info file if ending with .imageinfo else
@@ -53,8 +55,18 @@ class ScrolledCanvas(Frame):
         self.mouse_double_down_call = mouse_double_down_call
         self.mouse_up_call = mouse_up_call
         self.mouse_move_call = mouse_move_call
+        self.unit = unit
         self.imOriginal = None      # For restoration/resize without loss
         Frame.__init__(self, parent)
+        self.pack(expand=YES, fill=BOTH)
+        self.canvas_container_frame = Frame(self)        # Used to hold frame which will be destroyed/reset when  updated
+        self.canvas_container_frame.pack(expand=YES, fill=BOTH)
+        
+        """ resources created and destroyed in set_canvas """
+        self.canvas_frame = None                        # created/destroyed each new canvas
+        self.canv = None
+        self.sbarH = None
+        self.sbarV = None
         if title is None:
             if fileName is not None:
                 title = os.path.basename(fileName)
@@ -63,26 +75,16 @@ class ScrolledCanvas(Frame):
         self.title = title
         self.gmi = None
         self.image = None
+        self.width = width
+        self.height = height
         if gmi is not None:
-            self.gmi = gmi
-            self.image = gmi.image
-            self.image = gmi.image
+            self.update_gmi(gmi)
         elif image is not None:
-            self.image = image
-            self.imOriginal = self.image               # To avoid sizing loss
+            self.update_image(image)
         elif fileName is not None:
-            self.gmi = GoogleMapImage(file=fileName, useOldFile=True)
-            if self.gmi is None:
-                raise GMIError("Can't load image file %s" % fileName)
-            
-            self.image = self.gmi.image
-            self.imOriginal = self.image
+            self.update_file(fileName)
         else:
-            SlTrace.lg("Must provide one of fileName, gmi, or image")
-            sys.exit(1)
-            self.canvasAt = (0,0)
-        self.pack(expand=YES, fill=BOTH)
-        self.set_canvas(self.image, width=width, height=height)
+            raise SelectError("Must provide one of fileName, gmi, or image")
 
     def on_resize(self, event):
         # determine the ratio of old width/height to new width/height
@@ -148,7 +150,7 @@ class ScrolledCanvas(Frame):
         canvas_width = canvas.winfo_width()
         canvas_height = canvas.winfo_height()
         if self.gmi is None:
-            raise GMIError("canvas2image has no gmi")
+            raise SelectError("canvas2image has no gmi")
         
         image_width = self.gmi.getWidth()
         image_height = self.gmi.getHeight()
@@ -245,8 +247,27 @@ class ScrolledCanvas(Frame):
         :width: display width (pixels) default: image.width
         :height: display hight (pixels) default: image.height
         """
+        if self.canvas_frame is not None:
+            self.canvas_frame.pack_forget()
+            self.canvas_frame.destroy
+            self.canvas_frame = None
+        if self.canv is not None:
+            self.canv.forget()
+            self.canv.destroy()
+            self.canv = None
+        if self.sbarH is not None:
+            self.sbarH.forget()
+            self.sbarH.destroy()
+            self.sbarH = None
+        if self.sbarV is not None:
+            self.sbarV.forget()
+            self.sbarV.destroy()
+            self.sbarV = None
+            
+        self.canvas_frame = Frame(self.canvas_container_frame)             # Deleted and restored when canvas is updated
+        self.canvas_frame.pack(expand=YES, fill=BOTH)
         self.image = image
-        self.canv = Canvas(self, relief=SUNKEN)
+        self.canv = Canvas(self.canvas_frame, relief=SUNKEN)
         self.canv.pack(expand=YES, fill=BOTH)
         self.canv.bind ("<ButtonPress-1>", self.down)
         self.canv.bind ("<ButtonRelease-1>", self.up)
@@ -290,10 +311,69 @@ class ScrolledCanvas(Frame):
         self.im2=PIL.ImageTk.PhotoImage(self.image)
         self.imgtag=self.canv.create_image(0,0,anchor="nw",image=self.im2)
 
+    def update_file(self, fileName, **kwargs):
+        """ Update file
+        :fileName: file to load ==> GoogleMapImage (file)
+        :kwargs: See GoogleMapImage for parameters
+        """
+        if 'file' in kwargs:
+            raise SelectError("update file: should not have file=")
+
+        self.file_name = fileName
+        gmi = GoogleMapImage(file=fileName, **kwargs)
+        if gmi is None:
+            raise SelectError(f"Can't load GoogleMapImage({fileName}")
+
+        self.update_gmi(gmi)
+
+    def update_lat_long(self, latLong, **kwargs):
+        """ Update with latitude/longitude spec 
+        :latLong: upper left corner (lat,long) + GoogleMapImage parameters
+        :kwargs:  GoogleMapImage parameters (NOT file, ulLat, ulLong
+        """
+        if 'ulLat' in kwargs:
+            raise SelectError("Can't have ulLat parameter")
+        
+        if 'ulLong' in kwargs:
+            raise SelectError("Can't have ulLong parameter")
+        
+        gmi = GoogleMapImage(ulLat=latLong[0], ulLong=latLong[1], **kwargs)
+        if gmi is None:
+            raise SelectError(f"Can't load GoogleMapImage(latLong{latLong}")
+        
+        self.update_gmi(gmi)
+
+    def update_gmi(self, gmi):
+        """ Update gmi, image, and canvas
+        :gmi: (GoogleMapImage
+        """
+        if self.gmi is not None:
+            self.gmi.destroy()
+        self.gmi = gmi
+        self.update_image(gmi.image)
+
+    def destroy(self):
+        """ Release any resources
+        present for uniformity
+        """
+        pass
+    
+    def update_image(self, image):
+        """ Update image, and canvas
+        :image: map image
+        """
+
+        if self.image is not None:
+            ###self.image.destroy()        # AttributeError: 'Image' object has no attribute 'destroy'
+            self.image = None
+        self.image = image
+        self.imOriginal = image               # To avoid sizing loss
+        self.set_canvas(self.image, width=self.width, height=self.height)
+
+
 if __name__ == "__main__":
     import argparse
     from tkinter.filedialog import askopenfilename
-    from GMIError import GMIError
     from survey_point_manager import SurveyPointManager
     
     test_mapFile = '../out/gmi_ulA42_376371_O-71_187576_lRA42_369949_O-71_181274_640x640_sc1z19_h_mr45_AUG.png'
@@ -317,7 +397,7 @@ if __name__ == "__main__":
     infoFile = args.infoFile
     width = args.width
     height = args.height
-    
+    ###root = Tk()
     ###Tk().withdraw() # we don't want a full GUI, so keep the root window from appearing
     if mapFile is None:
         mapFile = askopenfilename() # show an "Open" dialog box and return the path to the selected file
@@ -325,6 +405,8 @@ if __name__ == "__main__":
     ###width = 100
     ###height = 100
     SlTrace.lg(f"canvas: width={width} height={height}")
+    ###frame = Frame(root)
+    ###frame.pack()
     sc = ScrolledCanvas(mapFile, width=width, height=height)
     pt_mgr = SurveyPointManager(sc)
     mainloop()

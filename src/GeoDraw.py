@@ -88,6 +88,26 @@ def geoMove(latLong=None, latDist=0, longDist=0):
     long2 = rad2deg(lambda2)
     return lat2, long2
 
+def geoUnitLen(unit="meter"):
+    """ Unit length in meters
+    :unit: unit name (only looks at first letter)
+            feet, meeter, yard, smoot
+            default: meter
+    """
+    uname = unit.lower()[0]
+    if uname  == 'f':
+        unitLen = .3048
+    elif uname == 'm':
+        unitLen = 1.
+    elif uname == 'y':
+        unitLen = .3048*3
+    elif uname == "s":      # smoot
+        unitLen = 1.7018
+    else:
+        raise GMIError(f"Unrecognized unit name '{unit}' choose f[oot],m[eter],y, or s")
+
+    return unitLen
+
 
 # Haversine formula example in Python
 # Author: Wayne Dyck
@@ -111,26 +131,12 @@ def gDistance(origin, destination):
 
 class GeoDraw:
     
+    EAST_DEG = 0.
+    NORTH_DEG = 90.
+    WEST_DEG = 180.
+    SOUTH_DEG = 270.
     
-    """
-    Setup geographic map annotation facility
-    For simplicity, internal locations are kept as floating point xy pixels
-    Physical locations are kept as Latitude, Logitude pairs but can be converted
-        to image x,y pixels
     
-    :image - PIL compatible image
-    :ulLat - Map's Upper left corner latitude
-    :ulLong - Map's Upper left corner longitude
-    :lrLat - Map's Lower right corner latitude
-    :lrLong - Map's lower right corner longitude
-    mapRot - Map's rotation (in degrees, counter clockwise) from North (up)
-    mapPoints - points (latitude, longitude) included in map - minimum a perimeter
-    :pos - drawing pen current position (x,y) in unit(meter)
-    :latLong - drawing pen current location (latitude, longitude) in degrees
-    :xY - drawing pen current location in floating pixels (x-left to right,y-top to bottom)
-    :deg - drawing pen current direction in degrees (counter clockwise)
-    :theta - drawing pen current direction in radians
-    """
     def __init__(self,
         image,
         mapRotate=None,
@@ -150,11 +156,29 @@ class GeoDraw:
         showSampleLL = True,        
         unit='meter',
         ):
+        """ Setup geographic map annotation facility
+        For simplicity, internal locations are kept as floating point xy pixels
+        Physical locations are kept as Latitude, Logitude pairs but can be converted
+            to image x,y pixels
+        
+        :image - PIL compatible image
+        :ulLat - Map's Upper left corner latitude
+        :ulLong - Map's Upper left corner longitude
+        :lrLat - Map's Lower right corner latitude
+        :lrLong - Map's lower right corner longitude
+        mapRot - Map's rotation (in degrees, counter clockwise) from North (up)
+        mapPoints - points (latitude, longitude) included in map - minimum a perimeter
+        :pos - drawing pen current position (x,y) in unit(meter)
+        :latLong - drawing pen current location (latitude, longitude) in degrees
+        :xY - drawing pen current location in floating pixels (x-left to right,y-top to bottom)
+        :deg - drawing pen current direction in degrees (counter clockwise)
+        :theta - drawing pen current direction in radians
+        """
     
         self.showSampleLL = showSampleLL
             
         if image is None:
-            image = Image.new("RGB", 400, 200)
+            image = Image.new("RGB", (400, 200))
         self.setImage(image)
         ulmx = 0.
         ulmy = 0.
@@ -210,7 +234,7 @@ class GeoDraw:
         self.lrY = lrY
         self.setCurLoc(pos=pos, latLong=latLong, xY=xY)
         self.setCurAngle(deg=deg, theta=theta)
-
+        self.unit = unit
 
     def setImage(self, image):
         """
@@ -683,15 +707,21 @@ class GeoDraw:
         self.text(title, xY=title_xy, font=title_font, fill=title_color)
 
     
-    def addToPoint(self, leng=None, xY=None, pos=None, latLong=None, theta=None, deg=None, **kwargs):
+    def addToPoint(self, leng=None, xY=None, pos=None, latLong=None, theta=None, deg=None, unit=None):
         """
         Add to point, returning adjusted point in pixels
         Add requested rotation (curDeg if None) to map rotation, if
         mapRotation is not None
+        :leng: length in unit
+        :unit: unit default: self.unit, meter
         """
         if leng is None:
             raise GMIError("leng is required")
         
+        if unit is None:
+            unit = self.unit
+        leng /= self.unitLen(unit)
+            
         if theta is not None and deg is not None:
             raise GMIError("Only specify theta or deg")
         if theta is not None:
@@ -784,8 +814,15 @@ class GeoDraw:
                     "image width=%d height=%d" % (crop_image.width, crop_image.height),
                     image=crop_image)
         self.setImage(crop_image)               # break connection with image
+    
+    def addToPointLL(self, leng=None, xY=None, pos=None, latLong=None, theta=None, deg=None, unit=None):
+        """
+        Add to point, returning adjusted point in latLong
+        """
+        xY = self.addToPoint(leng=leng, xY=xY, pos=pos, latLong=latLong,
+                              theta=theta, deg=deg, unit=unit)
 
-
+        return self.getLatLong(xY=xY)
     
     def geoDist(self, latLong=None, latLong2=None, unit='m'):
         """ Access to lat,long to distance
@@ -958,20 +995,11 @@ class GeoDraw:
         """ Unit length in meters
         :unit: unit name (only looks at first letter)
                 feet, meeter, yard, smoot
+                default: self.unit, meter
         """
-        uname = unit.lower()[0]
-        if uname  == 'f':
-            unitLen = .3048
-        elif uname == 'm':
-            unitLen = 1.
-        elif uname == 'y':
-            unitLen = .3048*3
-        elif uname == "s":      # smoot
-            unitLen = 1.7018
-        else:
-            raise GMIError(f"Unrecognized unit name '{unit}' choose f[oot],m[eter],y, or s")
-
-        return unitLen
+        if unit is None:
+            unit = self.unit
+        return geoUnitLen(unit)
 
         
             

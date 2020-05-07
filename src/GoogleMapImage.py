@@ -17,7 +17,7 @@ import urllib.request, urllib.parse, urllib.error, io
 from select_trace import SlTrace
 from select_error import SelectError
 
-from GeoDraw import GeoDraw, geoDistance, geoMove, gDistance, deg2rad
+from GeoDraw import GeoDraw, geoDistance, geoMove, gDistance, geoUnitLen
 from GMIError import GMIError
 from APIkey import APIKey
 from graphviz.files import File
@@ -250,12 +250,15 @@ class GoogleMapImage:
                                                     # x fraction, y fraction, length fraction
                  showSampleLL=True,                 # Show sample lat long
                  useOldFile=False,                  # Use existing image file even if code changed
-                 xDim=None,
+                 xDim=None,                           # Dimension default, only if no lrLat
                  yDim=None,
+                 xOffset=None,
+                 yOffset=None,
                  xSize=None,
                  ySize=None,
                  maxSize = None,
-                 file=None):
+                 file=None,
+                 unit='m'):
         """ Generate map image, given latitute, longitude of upper left
         and lower right corners
         :ulLat, ulLong:  Upper left corner latitude, Longitude of image
@@ -290,8 +293,12 @@ class GoogleMapImage:
                     default: show
         :useOldFile: use pre-existing file even if code has changed
                     default: False
-        :xDim:  picture x dimension in meters
-        :yDim:  picture y dimension in meters
+        :xDim:  picture x dimension in unit
+        :yDim:  picture y dimension in unit
+        :xOffset: picture offset, added to upper left corner (in unit) default: No offset
+                ASSUMES North facing
+        :yOffset: picture offset, added to upper left corner (in unit) default: No offset
+                ASSUMES North facing
         :xSize: raw image x-size in pixels
                 default: maxSize else 640
         :ySize: raw image y-size in pixels
@@ -307,7 +314,9 @@ class GoogleMapImage:
                                     _640x640_sc1z19
                                     _h_mr45.png
                             info:  gmi_uLA-20..._png.imageinfo
+        :unit: distance unit m,y,f,s default: m(eter)
         """
+        self.unit = unit
         self.displayRotateChange = displayRotateChange
         self.forceNew = forceNew
         self.useOldFile = useOldFile
@@ -328,7 +337,14 @@ class GoogleMapImage:
         if zoom is None:
             zoom = 18
         self.zoom = zoom
-
+        if xDim is None:
+            xDim = 40.          # xDim=40 in params does not replace xDim=None in call!
+        self.xDim = xDim        #Used in update... if present here
+        if yDim is None:
+            yDim = xDim
+        self.yDim = yDim
+        self.xOffset = xOffset
+        self.yOffset = yOffset
         if file is not None and mapPoints is None and ulLat is None:
             image, info = LoadImageFile(file)
             SlTrace.lg(f"info:{info}")
@@ -337,7 +353,14 @@ class GoogleMapImage:
             self.lrLat = info["lrLat"]
             self.lrLong = info["lrLong"]
             self.image = image
-        else:            
+        else:
+            if self.xOffset is not None or self.yOffset is not None:
+                xOffset = 0. if self.xOffset is None else self.xOffset
+                yOffset = 0. if self.yOffset is None else self.yOffset
+                xOffset_m = xOffset/self.unitLen()
+                yOffset_m = yOffset/self.unitLen()
+                ulLat, ulLong = geoMove((ulLat,ulLong), latDist=-yOffset_m, longDist=xOffset_m)
+                                
             if mapPoints is not None:
                 ulLatLong, lrLatLong = GeoDraw.boundLatLong(points=mapPoints, mapRotate=mapRotate,
                                                        borderM=mapBorderM,
@@ -363,8 +386,9 @@ class GoogleMapImage:
                         yDim = xDim
                     if lrLat is not None or lrLong is not None:
                         raise SelectError(f"xDim present - can't have lrLat({lrLat}, lrLong({lrLong})")
-                latDist = -yDim     # y increases downward, lat increases upward
-                longDist = xDim     # x increases rightward, longitude increases(less negative) rightward
+                unitLen = self.unitLen()
+                latDist = -yDim/unitLen     # y increases downward, lat increases upward
+                longDist = xDim/unitLen     # x increases rightward, longitude increases(less negative) rightward
                 lrLat, lrLong = geoMove((ulLat,ulLong), latDist=latDist, longDist=longDist)
             self.ulLat = ulLat
             self.ulLong = ulLong
@@ -397,7 +421,8 @@ class GoogleMapImage:
                                ulLat=self.ulLat, ulLong=self.ulLong,
                                lrLat=self.lrLat, lrLong=self.lrLong,
                                mapRotate=self.mapRotate,
-                               expandRotate=self.expandRotate)
+                               expandRotate=self.expandRotate,
+                               unit=unit)
 
         if self.compassRose is not None:
             self.addCompassRose(self.compassRose)
@@ -476,15 +501,16 @@ class GoogleMapImage:
     def addTitle(self, title, xY=None, size=None, color=None, **kwargs):
         self.geoDraw.addTitle(title, xY=xY, size=size, color=color, **kwargs)
 
-    def getCenter(self, ctype='LL', unit='m', ref_latLong=None):
+    def getCenter(self, ctype='LL', unit=None, ref_latLong=None):
         """ Get center of plot
         :type: type of center 'll' - long,lat, 'pos' - physical location relative to ref,
                             'xY' - pixel
                             default: 'll'
         :returns: tuple of 'll', 'pos', 'xy'
         """
+        if unit is None:
+            unit = self.unit
         ctype = ctype.lower()
-        unit = unit.lower()[0]
         if ref_latLong is None:
             ref_latLong = self.get_ref_latLong()
         ll_cent = (self.ulLat+self.lrLat)/2, (self.ulLong+self.lrLong)/2
@@ -513,7 +539,7 @@ class GoogleMapImage:
         """
         return self.geoDraw.getXY(latLong=latLong, pos=pos, xY=xY)
 
-    def getPos(self, latLong=None, pos=None, xY=None, unit='m', ref_latLong=None):
+    def getPos(self, latLong=None, pos=None, xY=None, unit=None, ref_latLong=None):
         """
         Get/Convert location pixel, longitude, physical location/specification
         to position in meters,yards, or feet
@@ -526,19 +552,57 @@ class GoogleMapImage:
                     latitude, longitude
         :returns: x,y position in unit
         """
+        if unit is None:
+            unit = self.unit
 
         return self.geoDraw.getPos(latLong=latLong, pos=pos, xY=xY, unit=unit, ref_latLong=ref_latLong)
 
     
-    def geoDist(self, latLong=None, latLong2=None, unit='m'):
+    def geoDist(self, latLong=None, latLong2=None, unit=None):
         """ Access to lat,long to distance
         :latLong: starting latitude,longitude pair
         :latLong2: ending latitude, longitued pair
         :unit: distance units name string feet, meter, yard
-                default: m(eter)
+                default: self.unit, m(eter)
         """
+        if unit is None:
+            unit = self.unit
         return self.geoDraw.geoDist(latLong=latLong, latLong2=latLong2, unit=unit)
 
+    
+    def addToPoint(self, leng=None, xY=None, pos=None, latLong=None, theta=None, deg=None, unit=None):
+        """
+        Add to point, returning adjusted point in pixels
+        Add requested rotation (curDeg if None) to map rotation, if
+        mapRotation is not None
+        :leng: length in unit
+        :unit: unit default: self.unit, meter
+        """
+        if unit is None:
+            unit = self.unit
+        if not hasattr(self, "geoDraw"):
+            geoDraw = GeoDraw(None,       # VERY limited 
+                               ulLat=latLong[0], ulLong=latLong[1],
+                               unit=unit)
+        else:
+            geoDraw = self.geoDraw
+        return geoDraw.addToPoint(leng=leng, xY=xY, pos=pos, latLong=latLong,
+                                       theta=theta, deg=deg, unit=unit)
+    
+    def addToPointLL(self, leng=None, xY=None, pos=None, latLong=None, theta=None, deg=None, unit=None):
+        """
+        Add to point, returning adjusted point in latLong
+        """
+        if unit is None:
+            unit = self.unit
+        if not hasattr(self, "geoDraw"):
+            geoDraw = GeoDraw(None,       # VERY limited 
+                               ulLat=latLong[0], ulLong=latLong[1],
+                               unit=unit)
+        else:
+            geoDraw = self.geoDraw
+        return geoDraw.addToPointLL(leng=leng, xY=xY, pos=pos, latLong=latLong,
+                                       theta=theta, deg=deg, unit=unit)
 
         
     def getImage(self):
@@ -811,6 +875,11 @@ class GoogleMapImage:
                 xY = (xY[0], xY[1] + line_sp)
             id.show()
 
+    def destroy(self):
+        """ Release resources
+            Present for uniformity
+        """
+        pass
 
     def text(self, text, xY=None,pos=None,latLong=None, **kwargs):
         """
@@ -818,6 +887,10 @@ class GoogleMapImage:
         """
         self.geoDraw.text(text, xY=xY, pos=pos, latLong=latLong, **kwargs)
 
+    def unitLen(self, unit=None):
+        if unit is None:
+            unit = self.unit
+        return geoUnitLen(unit)     # Use global function so we don't depend on GeoDraw
 
     def xMeterToPixel(self, dist):
         """
@@ -904,18 +977,19 @@ class GoogleMapImage:
         ypix = y_size - lat_chg/lat_size * y_size    # yincreases down
         return xpix, ypix
 
-    def latLonToXYm(self, lat=None, long=None, unit='m'):
+    def latLonToXYm(self, lat=None, long=None, unit=None):
         """
         Convert latitude, longitude to xy offset in meters
         Returning x,y pair
         :lat: latitude in deg
         :long: longitude in deg
         :unit: output units 'm', 'y', 'f'
-                default: 'm' meters
+                default: self.unit, 'm' meters
         :returns: x,y in units
         """
+        if unit is None:
+            unit = self.unit
         xpix, ypix = self.latlonToImage(lat=lat, long=long)
-        xmeter = xpix/self.image.width
         return xpix, ypix
 
 

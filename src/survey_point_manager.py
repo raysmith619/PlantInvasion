@@ -8,6 +8,7 @@ from select_error import SelectError
 
 from point_place import PointPlace
 from survey_point import SurveyPoint                
+from tracking_control import TrackingControl
             
 class SurveyPointManager:
     """ Manipulate a list of points (SurveyPoint)
@@ -60,7 +61,7 @@ class SurveyPointManager:
         self.points_by_label = {}        # Force unique names(case insensitive p1 = P1)
         self.track_sc = track_sc
         if track_sc is not None:
-            self.sc_point_place = PointPlace(self.sc)
+            self.sc_point_place = PointPlace(self.sc, title="Curser Tracking")
             self.sc.set_mouse_down_call(self.mouse_down)
             self.sc.set_mouse_double_down_call(self.mouse_double_down)
             self.sc.set_mouse_up_call(self.mouse_up)
@@ -69,6 +70,7 @@ class SurveyPointManager:
         self.in_point_start = None      # Set to starting x,y
         self.in_point_is_down = False   # Set True while mouse is down
         self.doing_mouse_motion = False # Suppress multiple concurrent moves
+        self.tr_ctl = TrackingControl(self)
     
     def mouse_down(self, canvas_x, canvas_y):
         """ Capture/process mouse clicks in canvas
@@ -140,6 +142,12 @@ class SurveyPointManager:
         """
         self.sc_point_place.motion_update(canvas_x, canvas_y)
 
+    def show_tracking_control(self):
+        """ Bring or re-bring tracking control to view
+        """
+        if self.tr_ctl is None:
+            self.tr_ctl = TrackingControl(self)
+            
     def change_unit(self, unit):
         self.sc_point_place.change_unit(unit)
                         
@@ -156,6 +164,8 @@ class SurveyPointManager:
         self.points.append(point)
         self.points_by_label[point_label] = point
         point.display()
+        self.tr_ctl.added_point()
+        
         return point
 
     def get_canvas(self):

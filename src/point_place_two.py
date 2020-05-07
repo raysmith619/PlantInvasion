@@ -15,6 +15,10 @@ class PointPlaceTwo(Toplevel):
     SHOW_POINT_LL = 2
     SHOW_POINT_DIST = 3
     SHOW_POINT_PIXEL = 4
+    
+    CONNECTION_LINE_NONE = "none"
+    CONNECTION_LINE_LINE = "line"
+    CONNECTION_LINE_IBAR = "ibar"
 
     ROW_TITLE = 0
     COL_TITLE = 2
@@ -44,18 +48,18 @@ class PointPlaceTwo(Toplevel):
     ROW_LINEAR_DIST = ROW_X_DIST
     COL_LINEAR_DIST = COL_Y_DIST + 1
 
-    ROW_X_PIXEL = ROW_X_DIST + 1
-    COL_X_PIXEL_LABEL = COL_LAT_LABEL
-    COL_X_PIXEL = COL_X_PIXEL_LABEL+1
+    ROW_X_IMAGE_PIXEL = ROW_X_DIST + 1
+    COL_X_IMAGE_PIXEL_LABEL = COL_LAT_LABEL
+    COL_X_IMAGE_PIXEL = COL_X_IMAGE_PIXEL_LABEL+1
     
-    ROW_Y_PIXEL = ROW_X_PIXEL
-    COL_Y_PIXEL_LABEL = COL_LONG_LABEL
-    COL_Y_PIXEL = COL_Y_PIXEL_LABEL + 1
+    ROW_Y_IMAGE_PIXEL = ROW_X_IMAGE_PIXEL
+    COL_Y_IMAGE_PIXEL_LABEL = COL_X_IMAGE_PIXEL + 1
+    COL_Y_IMAGE_PIXEL = COL_Y_IMAGE_PIXEL_LABEL + 1
     
-    ROW_PIXEL_DIST = ROW_X_PIXEL
-    COL_PIXEL_DIST = COL_Y_PIXEL + 1
+    ROW_IMAGE_DIST = ROW_X_IMAGE_PIXEL
+    COL_IMAGE_DIST = COL_Y_IMAGE_PIXEL + 1
 
-    ROW_CANVAS_X_PIXEL = ROW_Y_PIXEL + 1
+    ROW_CANVAS_X_PIXEL = ROW_Y_IMAGE_PIXEL + 1
     COL_CANVAS_X_PIXEL_LABEL = COL_LAT_LABEL
     COL_CANVAS_X_PIXEL = COL_CANVAS_X_PIXEL_LABEL+1
     
@@ -85,7 +89,10 @@ class PointPlaceTwo(Toplevel):
                  track_sc=False,
                  point1=None,
                  point2=None,
-                 unit="f"           # folksy :)
+                 unit="f",           # folksy :)
+                 connection_line=CONNECTION_LINE_LINE,
+                 connection_line_width=2,
+                 connection_line_color="red",
                  ):
         
         
@@ -100,7 +107,7 @@ class PointPlaceTwo(Toplevel):
         :unit" - linear unit default: "m"
         """
         self.mt_width = 10              # meter form entry width (char)
-        self.px_width = 5               # pixel form entry width (char)
+        self.px_width = 6               # pixel form entry width (char)
         self.ll_width = 11              # long/lat form entry width (char)
         self.px_fmt = ".0f"             # pixel format
         self.ll_fmt = ".7f"             # longitude/latitude format
@@ -116,12 +123,17 @@ class PointPlaceTwo(Toplevel):
         self.standalone = False
         self.motion_update2 = None     # Used if sc already has a motion call
         self.unit = unit
+        self.connection_line = connection_line
+        self.connection_line_tag = None # Connection line tag(s), if any
+        self.connection_line_width=connection_line_width
+        self.connection_line_color=connection_line_color
+        
         if parent is None:
             parent = Tk()
             ###parent.withdraw()
             self.standalone = True
         self.mw = parent
-        super().__init__(parent)
+        ###super().__init__(parent)
         self.sc = sc
         if sc is not None:
             self.gmi = sc.gmi
@@ -178,26 +190,27 @@ class PointPlaceTwo(Toplevel):
         self.ctls_ctls[field] = entry = Entry(ctl_frame, textvariable=content, width=width)
         entry.grid(row=PointPlaceTwo.ROW_LINEAR_DIST, column=PointPlaceTwo.COL_LINEAR_DIST, sticky=W)
             
-        field = "x_pixel"
+        field = "x_image"
         width = self.px_width
         self.ctls_vars[field] = content = StringVar()
-        Label(master=ctl_frame, text="x(pixels)").grid(row=PointPlaceTwo.ROW_X_PIXEL, column=PointPlaceTwo.COL_X_PIXEL_LABEL)
+        Label(master=ctl_frame, text="x(image px)").grid(row=PointPlaceTwo.ROW_X_IMAGE_PIXEL, column=PointPlaceTwo.COL_X_IMAGE_PIXEL_LABEL)
         self.ctls_ctls[field] = entry = Entry(ctl_frame, textvariable=content, width=width, text="")
-        entry.grid(row=PointPlaceTwo.ROW_X_PIXEL, column=PointPlaceTwo.COL_X_PIXEL, sticky=W)
+        entry.grid(row=PointPlaceTwo.ROW_X_IMAGE_PIXEL, column=PointPlaceTwo.COL_X_IMAGE_PIXEL, sticky=W)
         
-        field = "y_pixel"
+        field = "y_image"
         width = self.px_width
         self.ctls_vars[field] = content = StringVar()
+        Label(master=ctl_frame, text="y(image px)").grid(row=PointPlaceTwo.ROW_X_IMAGE_PIXEL, column=PointPlaceTwo.COL_Y_IMAGE_PIXEL_LABEL)
         self.ctls_ctls[field] = entry = Entry(ctl_frame, textvariable=content, width=width, text="")
-        entry.grid(row=PointPlaceTwo.ROW_PIXEL_DIST, column=PointPlaceTwo.COL_PIXEL_DIST, sticky=W)
+        entry.grid(row=PointPlaceTwo.ROW_Y_IMAGE_PIXEL, column=PointPlaceTwo.COL_Y_IMAGE_PIXEL, sticky=W)
         
-        field = "pixel_dist"
+        field = "image_dist"
         width = self.px_width
         self.ctls_vars[field] = content = StringVar()
         self.ctls_ctls[field] = entry = Entry(ctl_frame, textvariable=content, width=width, text="")
-        entry.grid(row=PointPlaceTwo.ROW_PIXEL_DIST, column=PointPlaceTwo.COL_PIXEL_DIST, sticky=W)
+        entry.grid(row=PointPlaceTwo.ROW_IMAGE_DIST, column=PointPlaceTwo.COL_IMAGE_DIST, sticky=W)
             
-        field = "canvas_x_pixel"
+        field = "canvas_x"
         width = self.px_width
         self.ctls_vars[field] = content = StringVar()
         Label(master=ctl_frame, text="canvas x(pixels)").grid(row=PointPlaceTwo.ROW_CANVAS_X_PIXEL,
@@ -205,7 +218,7 @@ class PointPlaceTwo(Toplevel):
         self.ctls_ctls[field] = entry = Entry(ctl_frame, textvariable=content, width=width, text="")
         entry.grid(row=PointPlaceTwo.ROW_CANVAS_X_PIXEL, column=PointPlaceTwo.COL_CANVAS_X_PIXEL, sticky=W)
         
-        field = "canvas_y_pixel"
+        field = "canvas_y"
         width = self.px_width
         self.ctls_vars[field] = content = StringVar()
         Label(master=ctl_frame, text="canvas y(pixels)").grid(row=PointPlaceTwo.ROW_CANVAS_Y_PIXEL,
@@ -273,15 +286,82 @@ class PointPlaceTwo(Toplevel):
         """ Update differences between 2 and 1
         """
         p1 = self.point1 
-        p2 = self.point2 
-        
-        p2c = CanvasCoords(self.sc, p2.x, p2.y, unit=self.unit)
         p1c = CanvasCoords(self.sc, p1.x, p1.y, unit=self.unit)
+        p2 = self.point2         
+        p2c = CanvasCoords(self.sc, p2.x, p2.y, unit=self.unit)
+        
+        latitude_dist = p2c.lat - p1c.lat
+        self.set_ctl_val("latitude", latitude_dist, fmt=self.ll_fmt)
+        
+        longitude_dist = p2c.long - p1c.long
+        self.set_ctl_val("longitude", longitude_dist, fmt=self.ll_fmt)
+        
+        ll_dist = sqrt(latitude_dist**2
+                           + longitude_dist**2)
+        self.set_ctl_val("ll_dist", ll_dist, fmt=self.ll_fmt)
+        
+        x_dist = p2c.x_dist - p1c.x_dist
+        self.set_ctl_label("x_dist", f"x({self.unit})")
+        self.set_ctl_val("x_dist", x_dist, fmt=self.dis_fmt)
+        
+        y_dist = p2c.y_dist - p1c.y_dist
+        self.set_ctl_label("y_dist", f"y({self.unit})")
+        self.set_ctl_val("y_dist", y_dist, fmt=self.dis_fmt)
+        
         linear_dist = sqrt((p2c.x_dist-p1c.x_dist)**2
                            +(p2c.y_dist-p1c.y_dist)**2)
-        self.set_ctl_val("linear_dist", linear_dist)
+        self.set_ctl_val("linear_dist", linear_dist, fmt=self.dis_fmt)
         
+        x_image = p2c.x_image - p1c.x_image
+        self.set_ctl_label("x_image", f"x({self.unit})")
+        self.set_ctl_val("x_image", x_image, fmt=self.px_fmt)
         
+        y_image = p2c.y_image - p1c.y_image
+        self.set_ctl_label("y_image", f"y({self.unit})")
+        self.set_ctl_val("y_image", y_image, fmt=self.px_fmt)
+        
+        image_dist = sqrt((p2c.canvas_x-p1c.canvas_x)**2
+                           +(p2c.canvas_y-p1c.canvas_y)**2)
+        self.set_ctl_val("image_dist", image_dist, fmt=self.px_fmt)
+        
+        canvas_x = p2c.canvas_x - p1c.canvas_x
+        self.set_ctl_label("canvas_x", f"x({self.unit})")
+        self.set_ctl_val("canvas_x", canvas_x, fmt=self.px_fmt)
+        
+        canvas_y = p2c.canvas_y - p1c.canvas_y
+        self.set_ctl_label("canvas_y", f"y({self.unit})")
+        self.set_ctl_val("canvas_y", canvas_y, fmt=self.px_fmt)
+        
+        canvas_dist = sqrt((p2c.canvas_x-p1c.canvas_x)**2
+                           +(p2c.canvas_y-p1c.canvas_y)**2)
+        self.set_ctl_val("canvas_dist", canvas_dist, fmt=self.px_fmt)
+        self.update_connection() 
+
+
+    def update_connection(self):
+        """ Update connection view between tracked point pairs
+        """
+        canvas = self.get_canvas()
+        if self.connection_line_tag is not None:
+            canvas.delete(self.connection_line_tag)
+            self.connection_line_tag = None
+            
+        
+        p1 = self.point1 
+        p1c = CanvasCoords(self.sc, p1.x, p1.y, unit=self.unit)
+        p2 = self.point2         
+        p2c = CanvasCoords(self.sc, p2.x, p2.y, unit=self.unit)
+        if self.connection_line == PointPlaceTwo.CONNECTION_LINE_NONE:
+            return
+        
+        if self.connection_line == PointPlaceTwo.CONNECTION_LINE_LINE:
+            self.connection_line_tag = canvas.create_line(
+                p1c.canvas_x, p1c.canvas_y, p2c.canvas_x, p2c.canvas_y,
+                fill=self.connection_line_color,
+                width=self.connection_line_width)
+        elif self.connection_line == PointPlaceTwo.CONNECTION_LINE_IBAR:
+            pass
+                
     def delete_window(self):
         """ Delete window
         """
@@ -410,6 +490,13 @@ class PointPlaceTwo(Toplevel):
         if  self.mw is not None:
             if self.mw.winfo_exists():
                 self.mw.update()
+
+    def change_connection_line(self, line):
+        """ Change linear unit, including label display
+        :line:  line-type
+        """
+        self.connection_line = line
+        self.update_point2_minus_p1()
 
     def change_unit(self, unit):
         """ Change linear unit, including label display

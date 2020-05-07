@@ -20,11 +20,12 @@ Created on October 30, 2018
 """
 import os
 from tkinter import *    
-from tkinter.filedialog import askopenfilename
+from tkinter import filedialog
+###from tkinter.filedialog import askopenfilename
 import argparse
 
 from survey_point_manager import SurveyPointManager
-from point_place import PointPlace
+from geo_address import GeoAddress
 
 ###gc.set_debug(gc.DEBUG_LEAK)
 mw = Tk()       # MUST preceed users of SelectControl for tkinter vars ...Var()
@@ -38,6 +39,7 @@ from select_window import SelectWindow
 from GoogleMapImage import GoogleMapImage
 from scrolled_canvas import ScrolledCanvas
 from tracking_control import TrackingControl
+from mapping_control import MappingControl
 
 def pgm_exit():
     SlTrace.lg("Properties File: %s"% SlTrace.getPropPath())
@@ -56,24 +58,33 @@ SlTrace.lg(pgm_info)
 trace = ""
 undo_len=200           # Undo length (Note: includes message mcd
 profile_running = False
-
-test_mapFile = '../out/gmi_ulA42_376371_O-71_187576_lRA42_369949_O-71_181274_640x640_sc1z19_h_mr45_AUG.png'
-mapFile = r"C:\Users\raysm\workspace\python\PlantInvasion\out\gmi_ulA42_376000_O-71_177315_lRA42_375640_O-71_176507_640x640_sc1z22_h.png"
-mapInfo = r"C:\Users\raysm\workspace\python\PlantInvasion\out\gmi_ulA42_376000_O-71_177315_lRA42_375640_O-71_176507_640x640_sc1z22_h_png.imageinfo" 
+lat = 42.34718
+long = -71.07317
+lat_long = None
+test_lat_long = (lat,long)
+address = None
+test_address = "24 Chapman St., Watertown, MA, US"
+map_file = None
+test_map_file = '../out/gmi_ulA42_376371_O-71_187576_lRA42_369949_O-71_181274_640x640_sc1z19_h_mr45_AUG.png'
+test_map_file = r"C:\Users\raysm\workspace\python\PlantInvasion\out\gmi_ulA42_376000_O-71_177315_lRA42_375640_O-71_176507_640x640_sc1z22_h.png"
+test_map_info = r"C:\Users\raysm\workspace\python\PlantInvasion\out\gmi_ulA42_376000_O-71_177315_lRA42_375640_O-71_176507_640x640_sc1z22_h_png.imageinfo" 
 infoFile = None
 
-
+'''
 def askopenfilename(**options):
     "Ask for a filename to open"
 
     return Open(**options).show()
+'''
 
 
 parser = argparse.ArgumentParser()
 
-parser.add_argument('-m', '--mapfile=', dest='mapFile', default=mapFile)
+parser.add_argument('-a', '--address', dest='address', default=address)
+parser.add_argument('-m', '--mapfile=', dest='map_file', default=map_file)
 parser.add_argument('-i', '--infofile=', dest='infoFile', default=infoFile)
 parser.add_argument('-f', '--image_file_name', '--file', dest='image_file_name', default=image_file_name)
+parser.add_argument('-l', '--lat_long', dest='lat_long', default=lat_long)
 parser.add_argument('--profile_running', type=str2bool, dest='profile_running', default=profile_running)
 parser.add_argument('--trace', dest='trace', default=trace)
 parser.add_argument('--undo_len', type=int, dest='undo_len', default=undo_len)
@@ -81,6 +92,8 @@ parser.add_argument('-w', '--width=', type=int, dest='width', default=width)
 parser.add_argument('-e', '--height=', type=int, dest='height', default=height)
 args = parser.parse_args()             # or die "Illegal options"
 SlTrace.lg("args: {}\n".format(args))
+address = args.address
+lat_long = args.lat_long
 image_file_name = args.image_file_name
 profile_running = args.profile_running
 trace = args.trace
@@ -89,7 +102,18 @@ if trace:
 undo_len = args.undo_len
 width = args.width
 height = args.height
-
+map_file = args.map_file
+if map_file == "TEST":
+    map_file = test_map_file      # Use test file
+infoFile = args.infoFile
+width = args.width
+height = args.height
+if lat_long == "TEST":       # Set to test_...
+    lat_long = test_lat_long
+if address == "TEST":
+    address = test_address
+if image_file_name == "TEST":
+    image_file_name = test_map_file
 memory_trace = False    # Set true when tracing
         
 mw.lift()
@@ -105,8 +129,8 @@ def file_save():
     """ Save updated image file
     """
     
-def image_file():
-    """ Get new image file
+def map_place():
+    """ Map a place
     """
     SlTrace.report("image_file - TBD")
     
@@ -134,6 +158,12 @@ app = SelectWindow(mw,
                 arrange_selection=False,
                 )
 
+def map_someplace():
+    if pt_mgr is None:
+        return
+    
+    MappingControl(pt_mgr)
+    
 def tracking_update(changes):
     """ Tracking update processor
     :changes: list of changed items
@@ -144,35 +174,82 @@ def track_points():
     global new_points    
     """ Add point next down click
     """
-    if pt_mgr is None:
-        return
+    if pt_mgr is not None:
+        pt_mgr.show_tracking_control()
+
+def do_map_file(file_name):
+    SlTrace.lg(f"mapfile: {map_file}")
+    ###width = 100
+    ###height = 100
+    SlTrace.lg(f"canvas: width={width} height={height}")
+    sc = ScrolledCanvas(fileName=file_name, width=width, height=height, parent=app)
+    pt_mgr = SurveyPointManager(sc)
+
+def do_lat_long(lat_long, xDim=40,  zoom=22, unit='m'):
+    """ Get/create map file from latitude longitude pair
+    :lat_long: (latitude,longitude) pair
+    :xDim: x dimentsions in meters
+    :zoom" Google maps precision 18 - coarse, 22 - high
+    :unit: linear dimension default: meters
+    :returns: map file name
+    """
+    global gmi
     
-    TrackingControl(pt_mgr, tracking_update=tracking_update)
+    ulLat, ulLong = lat_long
+    gmi = GoogleMapImage(ulLat=ulLat, ulLong=ulLong, xDim=xDim, zoom=zoom, unit=unit)
+    gmi.saveAugmented()             # Save file for reuse
+    return  gmi.makeFileName()
+
     
+def do_address(address):
+    """ Get long latitude from address
+    :address: string of address
+    """
+    if address == "ASK":
+        map_ctl = MappingControl(mgr=pt_mgr, address=test_address)
+        lat_long = map_ctl.get_location()
+        if lat_long is None:
+            loc_str = map_ctl.get_location_str()
+            SlTrace.report(f"We can't find location:{loc_str}")
+            return None
+    else:    
+        ga = GeoAddress()
+        lat_long = ga.get_lat_long(address)
+        if lat_long is None:
+            SlTrace.report(f"Can't find address: {address}")
+            return None
     
-app.add_menu_command("ImageFile", image_file)
+    return do_lat_long(lat_long)
+
+
+app.add_menu_command("Map Some Place", map_someplace)
 app.add_menu_separator()
 app.add_menu_command("Adjust View", adjust_view)
 app.add_menu_command("Track Points", track_points)
 
-if mapFile is None:
-    mapFile = askopenfilename() # show an "Open" dialog box and return the path to the selected file
-SlTrace.lg(f"mapfile: {mapFile}")
-mapFile = args.mapFile
-if mapFile == "TEST":
-    mapFile = test_mapFile      # Use test file
-infoFile = args.infoFile
-width = args.width
-height = args.height
-
-###Tk().withdraw() # we don't want a full GUI, so keep the root window from appearing
-if mapFile is None:
-    mapFile = askopenfilename() # show an "Open" dialog box and return the path to the selected file
-SlTrace.lg(f"mapfile: {mapFile}")
-###width = 100
-###height = 100
-SlTrace.lg(f"canvas: width={width} height={height}")
-sc = ScrolledCanvas(mapFile, width=width, height=height)
+if map_file is None:
+    map_file = test_map_file
+sc = ScrolledCanvas(fileName=map_file, width=width, height=height, parent=app)
 pt_mgr = SurveyPointManager(sc)
+map_ctl = MappingControl(mgr=pt_mgr, address=test_address)
+
+if address is not None:
+    if address == "ASK":
+        address = None
+    map_ctl.get_address(address)
+elif lat_long is not None:
+    map_ctl.get_address_ll(lat_long)
+elif map_file is not None:
+    if map_file == "ASK":
+        map_file = filedialog.askopenfilename(
+            initialdir= "../out",
+            title = "Open Map File",
+            filetypes= (("map files", "*.png"),
+                        ("info files", "*.map_info"),
+                        ("all files", "*.*"))
+                       )
+    if map_file is not None:
+        map_ctl.get_map_file(map_file)
+        
 mainloop()
 SlTrace.lg("After mainloop()")
