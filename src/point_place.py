@@ -114,7 +114,8 @@ class PointPlace(Toplevel):
         self.sc = sc
         if sc is not None:
             self.gmi = sc.gmi
-            self.ref_latLong = self.gmi.get_ref_latLong() 
+            if self.gmi is not None:
+                self.ref_latLong = self.gmi.get_ref_latLong() 
         else:
             self.gmi = None
         top_frame = Frame(self.mw)
@@ -322,15 +323,16 @@ class PointPlace(Toplevel):
         self.set_ctl_val("canvas_x_pixel", x_pixel, ".0f")
         self.set_ctl_val("canvas_y_pixel", y_pixel, ".0f")
         x_image, y_image = self.canvas2image(x_pixel, y_pixel)
-        lat_long = self.gmi.pixelToLatLong((x_image, y_image))
-        self.set_lat_long(lat_long)
+        if self.gmi is not None:
+            lat_long = self.gmi.pixelToLatLong((x_image, y_image))
+            self.set_lat_long(lat_long)
         
     def set_ctl_val(self, field, val, fmt=".3"):   # NOTE: This duplicates support in SelectControlWindow
         """ Set value
         """
         setattr(self, field, val)               # Set internal value
         ctl_var = self.ctls_vars[field]         # Not updating the display
-        ctl_var.set(str(self.lat))              # Not updating the display
+        ctl_var.set(str(val))              # Not updating the display
         ctl_ctl = self.ctls_ctls[field]         # Directly though control
         ctl_ctl.delete(0,END)
         fmt_str = f"{val:{fmt}}"

@@ -80,7 +80,7 @@ def askopenfilename(**options):
 
 parser = argparse.ArgumentParser()
 
-parser.add_argument('-a', '--address', dest='address', default=address)
+parser.add_argument('-a', '--address=', dest='address', default=address)
 parser.add_argument('-m', '--mapfile=', dest='map_file', default=map_file)
 parser.add_argument('-i', '--infofile=', dest='infoFile', default=infoFile)
 parser.add_argument('-f', '--image_file_name', '--file', dest='image_file_name', default=image_file_name)
@@ -227,8 +227,10 @@ app.add_menu_separator()
 app.add_menu_command("Adjust View", adjust_view)
 app.add_menu_command("Track Points", track_points)
 
-if map_file is None:
+
+if map_file == "TEST":
     map_file = test_map_file
+    
 sc = ScrolledCanvas(fileName=map_file, width=width, height=height, parent=app)
 pt_mgr = SurveyPointManager(sc)
 map_ctl = MappingControl(mgr=pt_mgr, address=test_address)
@@ -249,7 +251,7 @@ elif map_file is not None:
                         ("all files", "*.*"))
                        )
     if map_file is not None:
-        map_ctl.get_map_file(map_file)
+        do_map_file(map_file)
         
 mainloop()
 SlTrace.lg("After mainloop()")

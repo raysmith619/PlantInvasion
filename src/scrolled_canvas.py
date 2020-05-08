@@ -30,6 +30,7 @@ class CanvasCoords:
 
 class ScrolledCanvas(Frame):
     def __init__(self, fileName=None, gmi=None, image=None, title=None, parent=None,
+                 maptype=None,
                  width=None, height=None,
                  mouse_down_call=None,
                  mouse_double_down_call=None,
@@ -73,6 +74,7 @@ class ScrolledCanvas(Frame):
             else:
                 title = "Map Scroller"
         self.title = title
+        self.maptype = maptype
         self.gmi = None
         self.image = None
         self.width = width
@@ -84,8 +86,9 @@ class ScrolledCanvas(Frame):
         elif fileName is not None:
             self.update_file(fileName)
         else:
-            raise SelectError("Must provide one of fileName, gmi, or image")
-
+            ###raise SelectError("Must provide one of fileName, gmi, or image")
+            SlTrace.lg("ScrolledCanvas: Blank Start")
+            
     def on_resize(self, event):
         # determine the ratio of old width/height to new width/height
         if self.imOriginal is None:
@@ -239,7 +242,12 @@ class ScrolledCanvas(Frame):
         Close file window
         """
         self.canv.destroy()
-        
+
+    def change_maptype(self, maptype):
+        """ Change our default maptype
+        :maptype: plot map type
+        """
+        self.maptype = maptype
         
     def set_canvas(self, image, width=None, height=None):
         """ Setup canvas, given original image and dimensions
@@ -336,7 +344,9 @@ class ScrolledCanvas(Frame):
         
         if 'ulLong' in kwargs:
             raise SelectError("Can't have ulLong parameter")
-        
+
+        if self.maptype is not None and 'maptype' not in kwargs:
+            kwargs['maptype'] = self.maptype        
         gmi = GoogleMapImage(ulLat=latLong[0], ulLong=latLong[1], **kwargs)
         if gmi is None:
             raise SelectError(f"Can't load GoogleMapImage(latLong{latLong}")

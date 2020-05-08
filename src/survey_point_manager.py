@@ -148,6 +148,9 @@ class SurveyPointManager:
         if self.tr_ctl is None:
             self.tr_ctl = TrackingControl(self)
             
+    def change_maptype(self, maptype):
+        self.sc.change_maptype(maptype)
+            
     def change_unit(self, unit):
         self.sc_point_place.change_unit(unit)
                         
