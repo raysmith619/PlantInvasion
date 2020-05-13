@@ -2,7 +2,7 @@
 """
 Handling point display aspect for points in SurveyPointManager
 """
-
+from scrolled_canvas import CanvasCoords
 class SurveyPoint:
     """ Point objects used for doing surveying type operations
     .e.g. distance, direction, area, circumferance measurements
@@ -13,15 +13,16 @@ class SurveyPoint:
     POINT_TYPE_SQUARE = 3
     POINT_TYPE_CROSS = 4
     point_id = 0                # Unique id
-    point_no = 0                # point numbering
-    
-    def __init__(self, mgr, x=None, y=None,
+            
+    def __init__(self, mgr, lat=None, long=None,
                  label=None, label_size=None,
                  display_size=None, select_size=None,
                  point_type=None,
                  center_color=None, color=None,
                  point_id=None):
         """ Setup point attributes
+        :lat: latitude        # To insulate against scaling/shifting
+        :long: longitude
         :label: Point label (str) Point label prefix e.f. P1, P2,...
                 must be CASE INSENSITIVE unique
         :label_size: Point label vertical size in pixels
@@ -42,8 +43,8 @@ class SurveyPoint:
         
         self.mgr = mgr
         self.canvas = mgr.get_canvas()      # Local copy for simplicity
-        self.x = x
-        self.y = y
+        self.lat = lat
+        self.long = long
         if label is None:
             label = f"{mgr.label}{self.mgr.label_no}" 
             self.mgr.label_no += 1
@@ -75,10 +76,19 @@ class SurveyPoint:
         self.center_tag = None      # point center tag
         self.label_tag = None       # point label tag
         self.trackers = []          # list of trackers if any
-        
+
+    def __str__(self):
+        """ Point diagnostic representation
+        """
+        string = f"SurveyPoint {self.label}: lat: {self.lat} Long: {self.long}"
+        return string
+            
     def delete(self):
         """ Delete point (stop display)
         """
+        if self.canvas is None:
+            return
+        
         if self.point_tag is not None:
             self.canvas.delete(self.point_tag)
             self.point_tag = None
@@ -88,7 +98,10 @@ class SurveyPoint:
         if self.label_tag is not None:
             self.canvas.delete(self.label_tag)
             self.label_tag = None
-            
+
+    def destroy(self):
+        self.destroy()
+                    
     def display(self):
         """ Display point + label
         Adjusting / deleting / replacing canvas tags as appropriate
@@ -96,6 +109,13 @@ class SurveyPoint:
         self.display_point()
         self.display_label()
 
+    def redisplay(self):
+        """ Redisplay point
+        Should be the same as display because the internal state (long,lat)
+        does not change
+        """
+        self.display()
+        
     def display_point(self):
         """ Display point part
         """
@@ -105,10 +125,11 @@ class SurveyPoint:
         if self.center_tag is not None:
             self.canvas.delete(self.center_tag)
             self.center_tag = None
+        pc = CanvasCoords(self.mgr.sc, lat=self.lat, long=self.long)
         if self.point_type == SurveyPoint.POINT_TYPE_CIRCLE:
             w = h = self.display_size
-            x = self.x
-            y = self.y
+            x = pc.canvas_x
+            y = pc.canvas_y
             hw = w/2.
             hh = h/2.
             x0 = x - hw
@@ -133,8 +154,9 @@ class SurveyPoint:
         char_size = self.label_size
         text_size = char_size
         text_fill = "white"
-        x_pixel = self.x
-        y_pixel = self.y
+        pc = CanvasCoords(self.mgr.sc, lat=self.lat, long=self.long)
+        x_pixel = pc.canvas_x
+        y_pixel = pc.canvas_y
         text_push_v = char_size*2
         text_push = char_size*(len(text)/2.+1)   
         text_x_off = text_size
@@ -167,13 +189,17 @@ class SurveyPoint:
         """
         self.trackers.append(tracker)
         
-    def is_in(self, x, y):
-        """ Check if x,y is within point selection
-        :x: x - checking coordinate
-        :y: y - checking coordinate
-        :returns: True iff x,y is within point selection
+    def is_in(self, lat=None, long=None):
+        """ Check if lat,long is within point selection
+        :lat: latitude - checking coordinate
+        :long: longitude - checking coordinate
+        :returns: True iff lat,long is within point selection
         """
-        if (self.x-x)**2 + (self.y-y)**2 <= self.select_size**2:
+        p1c = CanvasCoords(self.mgr.sc, lat=self.lat, long=self.long)
+        p2c = CanvasCoords(self.mgr.sc, lat=lat, long=long)
+        
+        if ((p1c.canvas_x-p2c.canvas_x)**2 + (p1c.canvas_y-p2c.canvas_y)**2
+             <= self.select_size**2):
             return True
         
         return False

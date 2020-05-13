@@ -13,9 +13,22 @@ from PIL import Image, ImageDraw, ImageFont
 from select_trace import SlTrace
 from GoogleMapImage import GoogleMapImage, geoDistance
 from scrolled_canvas import ScrolledCanvas 
+from gpx_file import GPXFile
+from sample_file import SampleFile, SamplePoint
+
+def report(msg):
+    """ Defaut popup report
+    """
+    
+    SlTrace.report(msg)
 
 adjWidthForSize = True       # widen lines to aid visibility on large images
 mapRotate = 45.
+trailfile = "track_GPS1.gpx"
+trailfile = "track_GPS2.gpx"
+trailfile = "track_GPS3.gpx"
+trailfile = "track_GPS4.gpx"
+showtrail = True
 showSampleLL = True
 forceNew = False
 maptype = "hybrid"
@@ -23,14 +36,17 @@ scale = 1
 testMarks = False
 useOldFile = False
 zoom = 19
+SlTrace.clearFlags()
 parser = argparse.ArgumentParser()
 parser.add_argument('--adjwidthforsize', dest='adjWidthForSize', default=adjWidthForSize, action='store_true')
 parser.add_argument('--maprotate=', type=float, dest='mapRotate', default=mapRotate)
 parser.add_argument('--maptype', dest='maptype', default=maptype)
+parser.add_argument('--showtrail', dest='showtrail', default=showtrail)
 parser.add_argument('--showsamplell', dest='showSampleLL', default=showSampleLL, action='store_true')
 parser.add_argument('--forcenew', dest='forceNew', default=forceNew, action='store_true')
 parser.add_argument('--scale=', type=int, dest='scale', default=scale)
 parser.add_argument('--testmarks', dest='testMarks', default=testMarks, action='store_true')
+parser.add_argument('--trailfile', dest='trailfile', default=trailfile)
 parser.add_argument('--notestmarks', dest='testMarks', action='store_false')
 parser.add_argument('--useoldfile', dest='useOldFile', default=useOldFile, action='store_true')
 parser.add_argument('--zoom=', type=int, dest='zoom', default=zoom)
@@ -38,10 +54,12 @@ parser.add_argument('--zoom=', type=int, dest='zoom', default=zoom)
 args = parser.parse_args()             # or die "Illegal options"
 mapRotate = args.mapRotate
 maptype = args.maptype
+showtrail = args.showtrail
 showSampleLL = args.showSampleLL
 forceNew = args.forceNew
 scale = args.scale
 testMarks = args.testMarks
+trailfile = args.trailfile
 useOldFile = args.useOldFile
 zoom = args.zoom
 SlTrace.lg("%s %s\n" % (os.path.basename(sys.argv[0]), " ".join(sys.argv[1:])))
@@ -111,7 +129,7 @@ if header_row is None:
 """
 Collect points and find extent of lat,long
 """
-points = []
+points = []     # SamplePoint
 limit_pointh = {}   # Hash by limit
 pointh = {}         # Hash by plot
 lat_colno_1 = lat_colno - 3     # Orig #'s are 3 cols left
@@ -141,7 +159,8 @@ for nr in range(header_row+1, nrow+1):
     if min_long is None or long < min_long:
         min_long = long
         limit_pointh['min_long'] = plot
-    point = {'plot' : plot, 'lat' : lat, 'long' : long}
+        
+    point = SamplePoint(plot_key=plot, lat=lat, long=long)
     points.append(point)
     pointh[plot] = point
     
@@ -157,14 +176,19 @@ for key in limit_pointh.keys():
         plot_key = f"{pm.group(1)}-{pm.group(2)}"
     else:
         plot_key = plot
-    SlTrace.lg("%-8s %s  Longitude: %.5f latitude: %.5f" % (key, plot_key, point['long'], point['lat']))
+    SlTrace.lg("%-8s %s  Longitude: %.5f latitude: %.5f" % (key, plot_key, point.long, point.lat))
 
 """
 Plot using points, mapRotate, and mapBorder as guide
 """
-
+tennis_court = False
+if tennis_court:
+    mapBoarderM = 400
+else:
+    mapBoarderM = 0
+    
 gmi = GoogleMapImage( mapPoints=points,
-                      mapBorderM=400,
+                      mapBorderM=mapBoarderM,
                       showSampleLL=showSampleLL,
                       scale=scale,
                       forceNew=forceNew,
@@ -189,8 +213,6 @@ for point in points:
     gmi.addSample(point)
     if test_point >= 4:
         pass
-
-
 if testMarks:
     """   
     A center point surrounded with N,E,S, and W markers
@@ -265,7 +287,6 @@ now = datetime.datetime.now().strftime("%b %d %Y %H:%M:%S")
 title = "rotate = %.2f\n%s" % (rotate, now)
 gmi.addTitle(title)
 
-tennis_court = True
 if tennis_court:
     gd = gmi.geoDraw
     ptc = gmi.getXY(latLong=(42.37332, -71.18349))
@@ -295,8 +316,32 @@ if football_sideline:
     gmi.addScale(xY=goal_left_p, deg=th_deg, unitName='y', leng=gd.meterToPixel(100))
 
 ###gmi.show()
-aug_name = gmi.saveAugmented()
-sc = ScrolledCanvas(fileName=aug_name)
+
+if showtrail:
+    SlTrace.lg(f"Showing trail from file {trailfile}")
+    ts= SlTrace.getTs(dp=0)
+    pre_trail = f"pre_trail_{ts}.png"
+    SlTrace.lg(f"pre_trail name: {pre_trail}")
+    pre_trail_name = gmi.saveAugmented(os.path.join("..", "out", pre_trail))
+    SlTrace.lg(f"Saved pre-trail image file:{pre_trail_name}")
+    if not os.path.isabs(trailfile):
+        trailfile = os.path.join("..", "data", "trail_system_files", trailfile)
+        if not os.path.isabs(trailfile):
+            trailfile = os.path.abspath(trailfile)
+            if re.match(r'.*\.[^.]+$', trailfile) is None:
+                trailfile += ".gpx"         # Add default extension
+    if not os.path.exists(trailfile):
+        report(f"File {trailfile} not found")
+        sys.exit(1)
+    else:
+        gpx = GPXFile(trailfile)
+        gmi.addTrail(points=gpx.get_points(), title=trailfile)
+        aug_name = gmi.saveAugmented()
+        SlTrace.lg(f"aug_name: {aug_name}")
+        sc = ScrolledCanvas(fileName=aug_name)
+else:
+    aug_name = gmi.saveAugmented()
+    sc = ScrolledCanvas(fileName=aug_name)
 sc.mainloop()
 
         

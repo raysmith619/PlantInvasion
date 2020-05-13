@@ -19,14 +19,43 @@ class CanvasCoords:
         """convert canvas coordinates to the others
         TBD: do the other directions too
         """
+        gmi = sc.gmi
+        nc = 0
+        if canvas_x is not None or canvas_y is not None: nc += 1
+        if lat is not None or long is not None: nc += 1
+        if x_dist is not None or y_dist is not None: nc += 1
+        if x_image is not None or y_image is not None: nc += 1
+        if nc == 0:
+            raise SelectError("One of canvas, lat/long, dist or image is REQUIRED")
+        
+        if nc > 1:
+            raise SelectError("Only one of canvas, lat/long, dist, image allowed")
+        
+        if canvas_x is not None or canvas_y is not None:
+            x_image, y_image = sc.canvas2image(canvas_x, canvas_y)
+            lat, long = gmi.pixelToLatLong((x_image, y_image))
+            x_dist, y_dist = gmi.getPos(xY=(x_image, y_image), unit=unit)
+        elif lat is not None or long is not None:
+            x_image, y_image = gmi.getXY(latLong=(lat,long))
+            x_dist, y_dist = gmi.getPos(latLong=(lat,long), unit=unit)
+            canvas_x, canvas_y = sc.image2canvas(x_image,y_image)
+        elif x_image is not None or y_image is not None:
+            x_dist, y_dist = gmi.getPos(xY=(x_image,y_image), unit=unit)
+            canvas_x, canvas_y = sc.image2canvas(x_image, y_image)
+            lat, long = gmi.getLatLong(xY=(x_image,y_image))
+        elif x_dist is not None or y_dist is not None:
+            x_image, y_image = gmi.getXY(pos=(x_dist,y_dist), unit=unit)
+            canvas_x, canvas_y = sc.image2canvas(x_image, y_image)
+            lat, long = gmi.getLatLong()(xY=(x_image,y_image))
+                        
         self.canvas_x = canvas_x
         self.canvas_y = canvas_y
-        gmi = sc.gmi
-        self.x_image, self.y_image = sc.canvas2image(canvas_x, canvas_y)
-        self.lat, self.long = gmi.pixelToLatLong((self.x_image, self.y_image))
-        self.x_dist, self.y_dist = gmi.getPos(xY=(self.x_image, self.y_image),
-                                              ref_latLong=gmi.get_ref_latLong(),
-                                              unit=unit)
+        self.lat = lat
+        self.long = long
+        self.x_dist = x_dist
+        self.y_dist = y_dist
+        self.x_image = x_image
+        self.y_image = y_image        
 
 class ScrolledCanvas(Frame):
     def __init__(self, fileName=None, gmi=None, image=None, title=None, parent=None,
@@ -36,6 +65,7 @@ class ScrolledCanvas(Frame):
                  mouse_double_down_call=None,
                  mouse_up_call=None,
                  mouse_move_call=None,
+                 resize_call=None,
                  unit='m'
                  ):
         """
@@ -43,7 +73,9 @@ class ScrolledCanvas(Frame):
         :gmi: GoogleMapImage, if present
         :image - image, if present
         :mouse_down_call: if present, function to call with x,y canvas coordinates
-        :mouse_move_call: if present, function to call with x,y canvas coordinates on mouse motion
+        :mouse_move_call: if present, function to call with x,y canvas coordinates
+                             on mouse motion
+        :resize_call: call after resize, if present
         :unit: Linear distance unit m(eter), y(ard), f(oot) - default: "m" - meter
         """
         self.isDown = False
@@ -56,6 +88,7 @@ class ScrolledCanvas(Frame):
         self.mouse_double_down_call = mouse_double_down_call
         self.mouse_up_call = mouse_up_call
         self.mouse_move_call = mouse_move_call
+        self.resize_call = resize_call
         self.unit = unit
         self.imOriginal = None      # For restoration/resize without loss
         Frame.__init__(self, parent)
@@ -88,7 +121,13 @@ class ScrolledCanvas(Frame):
         else:
             ###raise SelectError("Must provide one of fileName, gmi, or image")
             SlTrace.lg("ScrolledCanvas: Blank Start")
-            
+
+    def set_resize_call(self, called):
+        """ Link resize event to probably SurveyPointManager.resize
+        :called:  function called with event
+        """
+        self.resize_call = called
+                    
     def on_resize(self, event):
         # determine the ratio of old width/height to new width/height
         if self.imOriginal is None:
@@ -106,7 +145,37 @@ class ScrolledCanvas(Frame):
         self.canv.config(scrollregion=(0,0,self.canvas_width,self.height))
         self.im2=PIL.ImageTk.PhotoImage(self.image)
         self.imgtag=self.canv.create_image(0,0,anchor="nw",image=self.im2)
+        self.lower_image()
+        if self.resize_call is not None:
+            self.resize_call()
+            
+    def set_size(self, width=None, height=None):
+        """ Set image size according to canvas size, possibley changed
+        :width: canvas width in pixexs, if present - default: unchanged
+        :height: canvas width in pixels, if present default: unchanged
+        """
+        # determine the ratio of old width/height to new width/height
+        if width is not None:
+            self.canvas_width = width
+        if height is not None:
+            self.canvas_height = height
+        # resize the canvas 
+        ###self.config(width=self.width, height=self.height)
+        # rescale all the objects tagged with the "all" tag
+        if self.imOriginal is None:
+            return                      # Nothing yet
+        
+        if not hasattr(self, "canvas_width"):
+            self.canvas_width = self.width
+        if not hasattr(self, "canvas_height"):
+            self.canvas_height = self.height
+        self.image = self.imOriginal.resize((self.canvas_width, self.canvas_height))
+        self.canv.config(scrollregion=(0,0,self.canvas_width, self.canvas_height))
+        self.im2=PIL.ImageTk.PhotoImage(self.image)
+        self.imgtag=self.canv.create_image(0,0,anchor="nw",image=self.im2)
 
+    def lower_image(self):
+        self.canv.lower(self.imgtag)
     
     def scale(self, wscale, hscale):
         """
@@ -161,6 +230,27 @@ class ScrolledCanvas(Frame):
         x_image = x_pixel*image_width/canvas_width
         y_image = y_pixel*image_height/canvas_height
         return (x_image, y_image)
+    
+    def image2canvas(self, x_image, y_image):
+        """ Convert image coordinates to canvas coordinates
+        taking into consideration scrolling and scaling, rotation(TBD)
+        :x_image: image x coord
+        :y_pixel: image y
+        :returns: (canvas_x, canvas_y)
+        TBD - NEED to handle scrolling/resizing
+        """
+        canvas = self.get_canvas()
+        canvas_width = canvas.winfo_width()
+        canvas_height = canvas.winfo_height()
+        if self.gmi is None:
+            raise SelectError("image2canvas has no gmi")
+        
+        image_width = self.gmi.getWidth()
+        image_height = self.gmi.getHeight()
+
+        canvas_x = x_image*canvas_width/image_width
+        canvas_y = y_image*canvas_height/image_height
+        return (canvas_x, canvas_y)
 
     def image_fract(self, canvas_xy=None):
         """ Convert canvas coordinates (x,y) to image x-fraction,  y-fraction
@@ -328,7 +418,7 @@ class ScrolledCanvas(Frame):
             raise SelectError("update file: should not have file=")
 
         self.file_name = fileName
-        gmi = GoogleMapImage(file=fileName, **kwargs)
+        gmi = GoogleMapImage(file=fileName, add_compass_rose=False, **kwargs)
         if gmi is None:
             raise SelectError(f"Can't load GoogleMapImage({fileName}")
 

@@ -90,7 +90,7 @@ class MappingControl(SelectControlWindow):
                 return att
             
     def __init__(self, mgr,
-                 title="", control_prefix=None,
+                 title=None, control_prefix=None,
                  name="",
                  address="",
                  street1="",
@@ -119,7 +119,7 @@ class MappingControl(SelectControlWindow):
         self.mgr = mgr
         self.unit = unit
         if title is None:
-            title = "Mapping Control"
+            title = "Finding Places"
         if control_prefix is None:
             control_prefix = MappingControl.CONTROL_NAME_PREFIX
         self.name = name
@@ -151,17 +151,29 @@ class MappingControl(SelectControlWindow):
         """
         prefix = self.get_prop_key("") + f"{FavoriteAddress.PROP_PREFIX}|"
         return prefix
-            
+
+    def add_favorite(self, name=None, address=None, fav=None):
+        """ Simple add
+        :name: favorite name
+        :address: composite address,
+        :fav: initial Favorite Address
+        """
+        if fav is None:
+            fav = FavoriteAddress(name=name, address=address)
+        self.favorites[name] = fav
+                    
     def load_favorites(self):
         """ Load favorite addresses
         """
         self.favorites = {}
         """ Prime the pump with our favorites... replaced as modified
         """
-        self.favorites["Grampy & Grammy's"] =  FavoriteAddress("Grampy & Grammy's", "233 Common St., Watertown, MA")
-        self.favorites["Alex & Decklan"] =  FavoriteAddress("Alex & Decklan", "24 Chapman St., Watertown, MA")
-        self.favorites["Antie Jen"] =  FavoriteAddress("Antie Jen", "67 Lenon Rd, Arlington, MA")
-        self.favorites["Avery & Charlie"] =  FavoriteAddress("Avery & Charlie", "85 Clarendon St, Boston, MA")
+        self.add_favorite("Grampy & Grammy's", "233 Common St., Watertown, MA")
+        self.add_favorite("Alex & Decklan", "24 Chapman St., Watertown, MA")
+        self.add_favorite("Antie Jen", "67 Lenon Rd, Arlington, MA")
+        self.add_favorite("Avery & Charlie", "85 Clarendon St, Boston, MA")
+        self.add_favorite("Whitney Hill Park", fav =  FavoriteAddress("Whitney Hill Park", "Whitney Hill Park",
+                        width=400, height=300, xOffset=100, yOffset=100, zoom=18))
         fav_prefix = self.get_favorites_prefix()           
         fav_keys = SlTrace.getPropKeys(startswith=fav_prefix)
         
@@ -482,7 +494,6 @@ class MappingControl(SelectControlWindow):
         
     
 if __name__ == '__main__':
-    from select_trace import SlTrace
 
     def set_cmd(ctl):
         SlTrace.lg("Set Button")

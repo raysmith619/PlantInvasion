@@ -9,7 +9,14 @@ from select_error import SelectError
 from point_place import PointPlace
 from survey_point import SurveyPoint                
 from tracking_control import TrackingControl
-            
+from scrolled_canvas import CanvasCoords
+
+class PointSelection:
+    def __init__(self, point_list=None, name=None, title=None):
+        self.point_list = point_list
+        self.name = name
+        self.title = title
+                    
 class SurveyPointManager:
     """ Manipulate a list of points (SurveyPoint)
     """
@@ -56,46 +63,75 @@ class SurveyPointManager:
         if point_id is None:
             point_id = 0
         self.point_id = point_id
-        
-        self.points = []
-        self.points_by_label = {}        # Force unique names(case insensitive p1 = P1)
-        self.track_sc = track_sc
+        self.reset_points()
+        self.track_sc = False           # Set True if tracking
         if track_sc is not None:
-            self.sc_point_place = PointPlace(self.sc, title="Curser Tracking")
-            self.sc.set_mouse_down_call(self.mouse_down)
-            self.sc.set_mouse_double_down_call(self.mouse_double_down)
-            self.sc.set_mouse_up_call(self.mouse_up)
-            self.sc.set_mouse_move_call(self.mouse_motion)
+            self.track_cursor()
         self.in_point = None            # Set to point we're in, if any
         self.in_point_start = None      # Set to starting x,y
         self.in_point_is_down = False   # Set True while mouse is down
         self.doing_mouse_motion = False # Suppress multiple concurrent moves
         self.tr_ctl = TrackingControl(self)
-    
+        self.point_lists = {}           # Dictionary of point list e.g. SampleFile, GPXFile
+        
+    def track_cursor(self):
+        """ start/restart tracking cursor
+        """
+        if not self.track_sc:
+            self.sc_point_place = PointPlace(self.sc, title="Curser Tracking")
+            self.sc.set_mouse_down_call(self.mouse_down)
+            self.sc.set_mouse_double_down_call(self.mouse_double_down)
+            self.sc.set_mouse_up_call(self.mouse_up)
+            self.sc.set_mouse_move_call(self.mouse_motion)
+            self.track_sc = True
+            
+    def reset_points(self):
+        self.points = []
+        self.points_by_label = {}
+        self.label_no = 1       # Reset point labeling
+        self.point_id = 0
+
+    def resize(self):
+        self.redisplay()
+        
+        
+    def redisplay(self):
+        """ Redisplay points, tracking connections
+        everything that resize might change
+        """
+        for point in self.points:
+            point.redisplay()
+        self.tr_ctl.redisplay()
+                   
     def mouse_down(self, canvas_x, canvas_y):
         """ Capture/process mouse clicks in canvas
         :canvas_x: canvas x-coordinate
         :canvas_y: canvas y-coordinate
         """
+        pc = CanvasCoords(self.sc, canvas_x=canvas_x, canvas_y=canvas_y)
         SlTrace.lg(f"mouse_down: canvas_x={canvas_x:.0f} canvas_y={canvas_y:.0f}", "mouse")
-        point = self.get_in(canvas_x, canvas_y)
+        point = self.get_in(lat=pc.lat, long=pc.long)
         if point is not None:
             self.in_point_is_down = True
             self.in_point = point
-            self.in_point_start = (canvas_x, canvas_y)  # ref for movement
+            self.in_point_start = (pc.lat, pc.long)  # ref for movement
         else:
-            point = self.add_point(SurveyPoint(self, x=canvas_x, y=canvas_y))
+            point = self.add_point(SurveyPoint(self, lat=pc.lat, long=pc.long))
             self.in_point_is_down = True
             self.in_point = point
-            self.in_point_start = (canvas_x, canvas_y)
+            self.in_point_start = (pc.lat, pc.long)
 
     def mouse_double_down(self, canvas_x, canvas_y):
         """ Capture/process double click
+        If we have a region of 3 or more points close region (connect end to beginning)
         :canvas_x:    x-coordinate
         :canvas_y:    y-coordinate
         """
         _ = canvas_x
         _ = canvas_y
+        if self.tr_ctl.complete_region():
+            return              # Region was completed
+        
 
     def mouse_up(self, canvas_x, canvas_y):            
         """ Capture/process mouse up - Add new point if 
@@ -145,15 +181,28 @@ class SurveyPointManager:
     def show_tracking_control(self):
         """ Bring or re-bring tracking control to view
         """
-        if self.tr_ctl is None:
-            self.tr_ctl = TrackingControl(self)
+        self.track_cursor()
+        self.tr_ctl = TrackingControl(self)
+                
+    def change_cursor_info(self, cursor_info):
+        self.track_cursor()
+        self.sc_point_place.change_cursor_info(cursor_info)
             
     def change_maptype(self, maptype):
         self.sc.change_maptype(maptype)
             
     def change_unit(self, unit):
         self.sc_point_place.change_unit(unit)
-                        
+            
+            
+    def clear_points(self):
+        """ remove points
+        """
+        self.tr_ctl.clear_tracking()       # First clear tracking
+        for pt in self.points:
+            pt.delete()
+        self.reset_points()
+                    
     def add_point(self, point):
         """ Add new point to list
         Checks for unique name - error if pre-existing named point
@@ -171,19 +220,37 @@ class SurveyPointManager:
         
         return point
 
+    def add_point_list(self, point_list, name=None, title=None):
+        """ Add point list for future access
+        :point_list: point list object (SampleFile, GPXFile))
+        :name: name (unique) of list (sample, trail)
+        :title: title, often file name
+        """
+        self.point_lists[name] = PointSelection(point_list, name=name, title=title)
+
+    def get_point_list(self, name):
+        """ Get point list, if present
+        :name: name of point list
+        :returns: point list, if present else None
+        """
+        if name in self.point_lists:
+            return self.point_lists[name]
+        
+        return None
+
     def get_canvas(self):
         """ Get Canvas type object
         """
         return self.sc.get_canvas()
     
-    def get_in(self, x, y):
+    def get_in(self, lat=None, long=None):
         """ Return point if onewithin selection area
-        :x: x-Coordinate 
-        :y: y-Coordinate
+        :lat: latitude 
+        :long: longitude
         :returns: first if any, else None
         """
         for point in self.points:
-            if point.is_in(x,y):
+            if point.is_in(lat=lat,long=long):
                 return point
             
         return None

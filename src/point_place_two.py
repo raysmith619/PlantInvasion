@@ -286,9 +286,9 @@ class PointPlaceTwo(Toplevel):
         """ Update differences between 2 and 1
         """
         p1 = self.point1 
-        p1c = CanvasCoords(self.sc, p1.x, p1.y, unit=self.unit)
+        p1c = CanvasCoords(self.sc, lat=p1.lat, long=p1.long, unit=self.unit)
         p2 = self.point2         
-        p2c = CanvasCoords(self.sc, p2.x, p2.y, unit=self.unit)
+        p2c = CanvasCoords(self.sc, lat=p2.lat, long=p2.long, unit=self.unit)
         
         latitude_dist = p2c.lat - p1c.lat
         self.set_ctl_val("latitude", latitude_dist, fmt=self.ll_fmt)
@@ -337,6 +337,8 @@ class PointPlaceTwo(Toplevel):
         self.set_ctl_val("canvas_dist", canvas_dist, fmt=self.px_fmt)
         self.update_connection() 
 
+    def redisplay(self):
+        self.update_connection()
 
     def update_connection(self):
         """ Update connection view between tracked point pairs
@@ -348,9 +350,9 @@ class PointPlaceTwo(Toplevel):
             
         
         p1 = self.point1 
-        p1c = CanvasCoords(self.sc, p1.x, p1.y, unit=self.unit)
+        p1c = CanvasCoords(self.sc, lat=p1.lat, long=p1.long, unit=self.unit)
         p2 = self.point2         
-        p2c = CanvasCoords(self.sc, p2.x, p2.y, unit=self.unit)
+        p2c = CanvasCoords(self.sc, lat=p2.lat, long=p2.long, unit=self.unit)
         if self.connection_line == PointPlaceTwo.CONNECTION_LINE_NONE:
             return
         
@@ -506,7 +508,20 @@ class PointPlaceTwo(Toplevel):
         self.set_ctl_label("x_dist", f"x({unit})")
         self.set_ctl_label("y_dist", f"y({unit})")
         self.update_point2_minus_p1()
+    
+    def destroy(self):
+        """ Release resources
+        """
+        canvas = self.get_canvas()
+        if canvas is None:
+            return
         
+        if self.connection_line_tag is not None:
+            canvas.delete(self.connection_line_tag)
+        if self.standalone and self.mw is not None:
+            self.mw.destroy()
+            self.mw = None
+            
 if __name__ == "__main__":
     from GoogleMapImage import GoogleMapImage
     from scrolled_canvas import ScrolledCanvas

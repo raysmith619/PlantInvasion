@@ -12,20 +12,19 @@ Display of the following will be provided:
 Home: https://www.google.com/maps/place/233+Common+St,+Watertown,+MA+02472
             /@42.3760002,-71.1773149,51m/data=!3m1!1e3!4m5
             !3m4!1s0x89e377f6fcdb5fe3:0x4f5a8d756f440867!8m2!3d42.3760597!4d-71.1772921
-"""
-"""
+
 Created on October 30, 2018
 
 @author: Charles Raymond Smith
 """
 import os
 from tkinter import *    
-from tkinter import filedialog
 ###from tkinter.filedialog import askopenfilename
 import argparse
 
 from survey_point_manager import SurveyPointManager
 from geo_address import GeoAddress
+from sample_file import SampleFile
 
 ###gc.set_debug(gc.DEBUG_LEAK)
 mw = Tk()       # MUST preceed users of SelectControl for tkinter vars ...Var()
@@ -40,6 +39,7 @@ from GoogleMapImage import GoogleMapImage
 from scrolled_canvas import ScrolledCanvas
 from tracking_control import TrackingControl
 from mapping_control import MappingControl
+from gpx_file import GPXFile
 
 def pgm_exit():
     SlTrace.lg("Properties File: %s"% SlTrace.getPropPath())
@@ -158,6 +158,75 @@ app = SelectWindow(mw,
                 arrange_selection=False,
                 )
 
+samplefile = "../data/2018 05 12 Revised GPS coordinates of 32 sample plot centers.xlsx"
+def add_sample_file():
+    """ add trail file to display
+    """
+    global samplefile
+    
+    if samplefile is None:
+        samplefile = filedialog.askopenfilename(
+            initialdir= "../data",
+            title = "Open Sample File",
+            filetypes= (("sample files", "*.xlsx"),
+                        ("all files", "*.*"))
+                       )
+        if samplefile is not None:
+            SlTrace.report(f"No file selected")
+            sys.exit(1)
+
+    if not os.path.isabs(samplefile):
+        samplefile = os.path.join("..", "data", samplefile)
+        if not os.path.isabs(samplefile):
+            samplefile = os.path.abspath(samplefile)
+            if re.match(r'.*\.[^.]+$', samplefile) is None:
+                samplefile += ".xlsx"         # Add default extension
+    if not os.path.exists(samplefile):
+        SlTrace.report(f"File {samplefile} not found")
+        sys.exit(1)
+        
+    spx = SampleFile(samplefile)
+    sc.gmi.addSamples(points=spx.get_points(), title=samplefile)
+    sc.set_size()
+    sc.lower_image()        # Place map below points/lines
+    if pt_mgr is not None:
+        pt_mgr.add_point_list(spx, name="samples", title=samplefile)
+
+trailfile = "trails_from_averaged_waypoints_CORRECTED_9nov2018"
+def add_trail_file():
+    """ add trail file to display
+    """
+    global trailfile
+    
+    if trailfile is None:
+        trailfile = filedialog.askopenfilename(
+            initialdir= "../data/trail_system_files",
+            title = "Open trail File",
+            filetypes= (("trail files", "*.gpx"),
+                        ("all files", "*.*"))
+                       )
+        if trailfile is not None:
+            SlTrace.report(f"No file selected")
+            sys.exit(1)
+
+    if not os.path.isabs(trailfile):
+        trailfile = os.path.join("..", "data", "trail_system_files", trailfile)
+        if not os.path.isabs(trailfile):
+            trailfile = os.path.abspath(trailfile)
+            if re.match(r'.*\.[^.]+$', trailfile) is None:
+                trailfile += ".gpx"         # Add default extension
+    if not os.path.exists(trailfile):
+        SlTrace.report(f"File {trailfile} not found")
+        sys.exit(1)
+        
+    gpx = GPXFile(trailfile)
+    sc.gmi.addTrail(points=gpx.get_points(), title=trailfile)
+    sc.set_size()
+    sc.lower_image()        # Place map below points/lines
+    if pt_mgr is not None:
+        pt_mgr.add_point_list(gpx, name="trails", title=trailfile)
+
+
 def map_someplace():
     if pt_mgr is None:
         return
@@ -226,6 +295,8 @@ app.add_menu_command("Map Some Place", map_someplace)
 app.add_menu_separator()
 app.add_menu_command("Adjust View", adjust_view)
 app.add_menu_command("Track Points", track_points)
+app.add_menu_command("Add Trail File", add_trail_file)
+app.add_menu_command("Add Sample File", add_sample_file)
 
 
 if map_file == "TEST":
@@ -234,7 +305,7 @@ if map_file == "TEST":
 sc = ScrolledCanvas(fileName=map_file, width=width, height=height, parent=app)
 pt_mgr = SurveyPointManager(sc)
 map_ctl = MappingControl(mgr=pt_mgr, address=test_address)
-
+sc.set_resize_call(pt_mgr.resize)
 if address is not None:
     if address == "ASK":
         address = None

@@ -241,11 +241,13 @@ class GoogleMapImage:
                  forceNew=False,                    # Force get of new image
                  mapRotate=None,
                  mapPoints=None,                    # Draw map to include all points, when rotated
+                                                    # SamplePoint
                  mapBorderM=None,                    # extra space on edges
                  mapBorderD=None,
                  mapBorderP=None,
                  expandRotate=False,
                  maptype=None, zoom=None, scale=None,
+                 add_compass_rose=True,
                  compassRose=(.75, .25, .10),       # Place compass pointer, -1 ==> none
                                                     # x fraction, y fraction, length fraction
                  showSampleLL=True,                 # Show sample lat long
@@ -268,7 +270,7 @@ class GoogleMapImage:
         :forceNew: True - force obtaining new image
                 default: use cached image file if present
         :mapRotate: Rotate image (degrees), if present
-        :mapPoints: list of points added to display
+        :mapPoints: list of points (SamplePoint) added to display
                     if present - Draw map to include all points,
                      when rotated
         :mapBorderM: extra space on edges
@@ -326,8 +328,12 @@ class GoogleMapImage:
                 or lrLat is not None or lrLong is not None) and mapPoints is not None:
             raise GMIError("Use only one of ullat... or mapPoints")
         self.mapPoints = mapPoints
-        if compassRose is not None and compassRose[0] < 0:
-            compassRose = None                      # -1 -- None
+        self.add_compass_rose = add_compass_rose
+        if not add_compass_rose:
+            self.compassRose = None
+        else:
+            if compassRose is not None and compassRose[0] < 0:
+                compassRose = None                      # -1 -- None
         self.compassRose = compassRose
         self.showSampleLL = showSampleLL
         if maptype is None:
@@ -424,7 +430,7 @@ class GoogleMapImage:
                                expandRotate=self.expandRotate,
                                unit=unit)
 
-        if self.compassRose is not None:
+        if self.add_compass_rose and self.compassRose is not None:
             self.addCompassRose(self.compassRose)
             
     def makeFileName(self):
@@ -1073,14 +1079,19 @@ class GoogleMapImage:
     def addSample(self, point):
         """
         Add sample to current image
-        point:
-            plot
-            long
-            lat    
+        point SamplePoint
     
         """
         self.geoDraw.addSample(point)
 
+    def addSamples(self, points=None, title=None):
+        return self.geoDraw.addSamples(points=points, title=title)
+
+    def addTrail(self, points, title=None):
+        """ Add trail, given ll points
+        :points: GPXPoints
+        """
+        return self.geoDraw.addTrail(points, title=title)
 
     def markPoint(self, point):
         """

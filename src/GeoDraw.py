@@ -2,6 +2,7 @@
 Interface to Pillow Image facilitating map annotation 
 """
 import re
+import os
 from PIL import Image, ImageDraw, ImageFont
 import urllib.request, urllib.parse, urllib.error, io
 from math import log, cos, sin, exp, sqrt, tan, asin, atan, atan2, pi, ceil
@@ -12,6 +13,7 @@ from idlelib.colorizer import color_config
 from pandas._libs.tslibs.offsets import get_firstbday
 
 from select_trace import SlTrace
+from gpx_file import GPXPoint
 
 EARTH_RADIUS = 6378137.
 EQUATOR_CIRCUMFERENCE = 2 * pi * EARTH_RADIUS
@@ -26,7 +28,7 @@ trace_scale = False
     
 def geoDistance(latLong=None, latLong2=None):
     """
-    Compute distance(in meters) between two points given in latitude,longitude pairs
+    Compute signed distance(in meters) between two points given in latitude,longitude pairs
     From: https://www.movable-type.co.uk/scripts/latlong.html
         JavaScript:    
 
@@ -254,7 +256,7 @@ class GeoDraw:
         providing an optional surrounding border area, clear of points, such that
         given a north-pointing scan provided by Google-Maps will, when rotated and cropped
         verticaly and horizonally, give a rectangle. 
-        :points a list of points(dictionaries), each having at least the entries
+        :points a list of points(SamplePoint), each having at least the entries
                 'lat' or 0 - latitude (float) degree
                 'long' or 1 - longitude (float) degree
         :mapRotate - map rotation (degree counter clockwise), from horizontal
@@ -335,6 +337,7 @@ class GeoDraw:
         dictionary of 'max_lat', 'min_lat, 'max_long', 'min_long' values
         followed by a dictionary of 'max_lat', 'min_lat, 'max_long', 'min_long' indexes into points
         Includes the maximum of initial and rotated points
+        :points: list of SamplePoint
         """
         limit_pointh = {}       # Hash by limit
         limit_point_roth = {}   # hash of rotated points by limit
@@ -346,14 +349,7 @@ class GeoDraw:
         min_long1 = None
         trace_ck = False
         for index, point in enumerate(points):
-            if 'lat' in point:
-                lat1 = point['lat']
-            else:
-                lat1 = point[0]
-            if 'long' in point:
-                long1 = point['long']
-            else:
-                long1 = point[1]
+            lat1, long1 = point.latLong()
             
             if max_lat1 is None or lat1 > max_lat1:
                 max_lat1 = lat1
@@ -415,6 +411,7 @@ class GeoDraw:
         Given point pairs lat,long in rotated map image, calculate max, min x,y pixels
         dictionary of 'max_x', 'min_x, 'max_y', 'min_y' values
         followed by a dictionary of 'max_x', 'min_x, 'max_y', 'min_y' indexes into points
+     :points: list of SamplePoint
         """
         limit_pointh = {}       # Hash by limit
         limit_point_roth = {}   # hash of rotated points by limit
@@ -425,8 +422,7 @@ class GeoDraw:
         max_y = None
         min_y = None
         for index, point in enumerate(points):
-            lat = point['lat']
-            long = point['long']
+            lat, long = point.latLong()
             x,y = self.getXY(latLong=(lat, long))
             
             if max_x is None or x > max_x:
@@ -452,6 +448,7 @@ class GeoDraw:
         """
         Add orientation marker
         """
+        SlTrace.lg("addCompassRose")
         if compassRose is None:
             compassRose = (.5, .5, .25)
         xFraction = compassRose[0]
@@ -483,29 +480,59 @@ class GeoDraw:
 
         self.text("North", xY=label_pt, font=north_label_font, fill=arrow_color)
 
+
+    def addTrail(self, points_in, title=None, color_code=False):
+        """ Add trail, given ll points
+        First try just add line segments connecting thepoints
+        :points_in: raw GPXPoints
+        :title: title (may be point file full path)
+        :color_code: color code longer point distances
+        """
+        if title is not None:
+            self.title = os.path.basename(title)
+            title_xy = (self.getWidth()*.5, self.getHeight()*.05)
+            self.addTitle(self.title, xY=title_xy)
+        self.trail_width = 2.       # Trail width in meters
+        self.max_dist_allowed = 150.
+        points = self.cleanTrail(points_in)
+        prev_point = None
+        for i, point in enumerate(points):
+            if prev_point is not None:
+                line_len = abs(self.geoDist(prev_point.latLong(), point.latLong()))
+                line_color = None
+                if color_code:
+                    if line_len > 100:
+                        line_color = "red"
+                        SlTrace.lg(f"point {i+1}: {point} is at a distance {line_len:.1f}m")
+                    elif line_len > 20:
+                        line_color = "blue"
+                    elif line_len > 10:
+                        line_color = "green"
+                    elif line_len > 5:
+                        line_color = "yellow"
+                if line_len > self.max_dist_allowed:
+                    SlTrace.lg(f"Ignoring Suspicious line {i+1}:"
+                               f" {prev_point} to {point} as being too long: {line_len:.1f}m")
+                    line_color = "red"
+                else:
+                    self.addTrailLine(prev_point, point, color=line_color)
+            prev_point = point
+        return True
+
     
-    def addSample(self, point):
+    def addSample(self, point, color="red"):
         """
         Add sample to current image
-        point:
-            plot
-            long
-            lat    
+        point: SamplePoint
     
         """
-        label_color = (255, 0, 0)
+        label_color = (255,0,0)
         label_size = 30
         label_font = ImageFont.truetype("arial.ttf", size=label_size)
         latlong_size = label_size/2
-        plot = point['plot']
-        pm = re.match("T(\d+)P(\d+)", plot)
-        if pm is not None:
-            plot_key = plot_key = f"{pm.group(1)}-{pm.group(2)}"
-        else:
-            plot_key = plot
+        plot_key = point.get_plot_key()
         plot_id = plot_key
-        long = point['long']
-        lat = point['lat']
+        lat, long = point.latLong()
         xY = self.getXY(latLong=(lat,long))
         plot_color = (0,255,0, 128)
         plot_radius = 10.
@@ -531,12 +558,91 @@ class GeoDraw:
             latlong_size = int(latlong_size)
             loc_string = "%.5f\n%.5f" % (long, lat)
             font_loc = ImageFont.truetype("arial.ttf", size=latlong_size)
+            if self.mapRotate is None:
+                self.mapRotate = 0.
             latlong_xy = self.addToPoint(latLong=(lat,long),
                                          leng=latlong_size, deg=-self.mapRotate)
             self.text(loc_string, xY=latlong_xy, font=font_loc,
                        fill=(255,255,255,255))    
 
 
+    def addSamples(self, points, title=None, color=None):
+        """ Add trail, given ll points
+        First try just add line segments connecting thepoints
+        :points: sample points (SamplePoint)
+        :title: title (may be point file full path)
+        :color: color for sample
+        """
+        if title is not None:
+            self.title = os.path.basename(title)
+            title_xy = (self.getWidth()*.5, self.getHeight()*.1)
+            self.addTitle(self.title, xY=title_xy)
+        for point in points:
+            self.addSample(point, color=color)
+        return True
+            
+    def addTrailLine(self, p1, p2, color=None):
+        """ Do trail segment from p1, 2p
+        :p1: First point GPXPoint
+        :p2: Second point GPXPoint    
+        """
+        if color is None:
+            color = "orange"
+        line_width = self.meterToPixel(self.trail_width)
+        self.lineSeg(latLong=(p1.lat,p1.long), latLong2=(p2.lat,p2.long), width=int(line_width),
+                     fill=color)
+
+    def cleanTrail(self, points_in):
+        """ Adjust initial points to most likely to be valid measurements
+            Assemble trail stats
+            1. Throw any points outside border
+        """
+        points = []
+        n_diff = 0              # Number of distances (n good pts - 1)
+        n_outside = 0
+        dist_sum = 0.
+        max_dist = None
+        min_dist = None
+        points_len = len(points_in)
+        for i, point in enumerate(points_in):
+            if not self.is_inside(latLong=point.latLong()):
+                n_outside += 1
+                SlTrace.lg(f"Ignoring point {i+1}: {point} as outside border")
+                continue
+                
+            point_prev = points[-1] if len(points) > 0 else None
+            check_prev = True if point_prev is not None else False
+            if i >= points_len-1:
+                check_next = False
+            else:
+                check_next = True
+                point_next = points_in[i+1]
+            if check_prev:
+                dist_prev = abs(self.geoDist(point_prev.latLong(), point.latLong()))
+                dist = dist_prev
+            if check_next:
+                dist_next = abs(self.geoDist(point.latLong(), point_next.latLong()))
+                dist = dist_next
+            if check_prev and check_next:
+                dist = max(dist_prev, dist_next)
+            points.append(point)
+            if check_prev:
+                n_diff += 1
+            if min_dist is None or dist < min_dist:
+                min_dist = dist
+            if max_dist is None or dist > max_dist:
+                max_dist = dist
+            dist_sum += dist            
+        SlTrace.lg("Trail Statistics")
+        SlTrace.lg(f"Number of points: {len(points_in)}")
+        SlTrace.lg(f"Number of displayed points: {len(points)}")
+        avg_dist = 0 if n_diff == 0 else dist_sum/n_diff
+        if len(points) > 0:
+            SlTrace.lg(f"minimum distance: {min_dist:.1f}m maximum distance: {max_dist:.1f}m average: {avg_dist:.2f}m")
+            SlTrace.lg(f"Total path distance: {dist_sum:.1f}m") 
+
+        return points
+        
     def addScale(self,
                 xY=None, pos=None, latLong=None,
                 xYEnd=None, posEnd=None, latLongEnd=None,
@@ -704,7 +810,7 @@ class GeoDraw:
         title_font = ImageFont.truetype("arial.ttf", size=size)
         title_color = color        
         title_xy = xY
-        self.text(title, xY=title_xy, font=title_font, fill=title_color)
+        self.text(title, xY=title_xy, font=title_font, fill=title_color, **kwargs)
 
     
     def addToPoint(self, leng=None, xY=None, pos=None, latLong=None, theta=None, deg=None, unit=None):
@@ -855,7 +961,7 @@ class GeoDraw:
     def getLatLong(self, latLong=None, pos=None, xY=None):
         """
         Get/Convert location pixel, longitude, physical location/specification
-        to pixel location
+        to lat/long
         """
         xY = self.getXY(latLong=latLong, pos=pos, xY=xY)
         latLong = self.pixelToLatLong(xY)
@@ -890,7 +996,7 @@ class GeoDraw:
         return x_out, y_out 
     
 
-    def getXY(self, latLong=None, pos=None, xY=None):
+    def getXY(self, latLong=None, pos=None, xY=None, unit=None):
         """
         Get/Convert location pixel, longitude, physical location/specification
         to pixel location
@@ -910,11 +1016,22 @@ class GeoDraw:
         if latLong is not None:
             xY =  self.latLongToPixel(latLong)
         elif pos is not None:
-            xY = self.posToPixel(pos)
+            xY = self.posToPixel(pos, unit=unit)
         if xY is None:
             xY = self.curXY
         return xY
 
+    def is_inside(self, latLong=None, pos=None, xY=None):
+        """ Test if point is within map borders
+        :latLong, pos, xY: location as in getXY,
+        :returns: True if inside
+        """
+        xY = self.getXY(latLong=latLong, pos=pos, xY=xY)
+        if (xY[0] < 0 or xY[1] < 0
+                 or xY[0] > self.getWidth() or xY[1] > self.getHeight()):
+            return False
+        
+        return True 
 
 
     def latLongToPixel(self, latLong):
@@ -1151,13 +1268,24 @@ class GeoDraw:
         self.draw.text(xY, text, **kwargs)
         
  
-    def lineSeg(self, leng=10, xY=None, pos=None, latLong=None, theta=None, deg=None, **kwargs):
+    def lineSeg(self, xY=None, pos=None, latLong=None,
+                xY2=None, pos2=None, latLong2=None,
+                 leng=10, theta=None, deg=None, **kwargs):
         """
-        Draw line segment starting at current pen Position
+        Draw line segment starting at given point
+        position(xY or pos or latLong) and going to 
+            2nd point:
+                (xY2 or pos2 or latLong2)
+                    or
+                point 2 plus length leng at angle (theta radians or deg degrees)
+            
         Extra named args are passed to Image.draw.line
         """
         xY = self.getXY(xY=xY, pos=pos, latLong=latLong)
-        new_xY = self.addToPoint(leng=leng, xY=xY, theta=theta, deg=deg)
+        if xY2 is not None or pos2 is not None or latLong2 is not None:
+            new_xY = self.getXY(xY=xY2, pos=pos2, latLong=latLong2)
+        else:
+            new_xY = self.addToPoint(leng=leng, xY=xY, theta=theta, deg=deg)
         self.line([xY, new_xY], **kwargs)
 
 
