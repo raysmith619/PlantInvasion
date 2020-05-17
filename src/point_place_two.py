@@ -6,8 +6,7 @@ Provides an updated positioning information of the points relation
 from tkinter import *
 from math import sqrt
 
-from select_trace import SlTrace
-from scrolled_canvas import CanvasCoords
+from canvas_coords import CanvasCoords
 
 class PointPlaceTwo(Toplevel):
     # Display point position annotation

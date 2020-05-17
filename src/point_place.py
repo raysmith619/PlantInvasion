@@ -6,7 +6,7 @@ Provides an updated positioning information of the points position
 from tkinter import *
 
 from select_trace import SlTrace
-from scrolled_canvas import CanvasCoords
+from canvas_coords import CanvasCoords
 
 class PointPlace(Toplevel):
     # Display point position annotation
@@ -441,7 +441,7 @@ class PointPlace(Toplevel):
         
         if self.connection_line_tag is not None:
             canvas.delete(self.connection_line_tag)
-        if self.stanalone and self.mw is not None:
+        if self.standalone and self.mw is not None:
             self.mw.destroy()
             self.mw = None
         

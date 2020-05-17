@@ -7,65 +7,22 @@ import os
 from select_trace import SlTrace
 from select_error import SelectError
 from GoogleMapImage import GoogleMapImage
-
-class CanvasCoords:
-    """ Aid in converting / using coordinates
-    """
-    def __init__(self, sc, canvas_x=None, canvas_y=None,
-             lat=None, long=None,
-             x_dist=None, y_dist=None,
-             x_image=None, y_image=None,
-             unit="m"):
-        """convert canvas coordinates to the others
-        TBD: do the other directions too
-        """
-        gmi = sc.gmi
-        nc = 0
-        if canvas_x is not None or canvas_y is not None: nc += 1
-        if lat is not None or long is not None: nc += 1
-        if x_dist is not None or y_dist is not None: nc += 1
-        if x_image is not None or y_image is not None: nc += 1
-        if nc == 0:
-            raise SelectError("One of canvas, lat/long, dist or image is REQUIRED")
-        
-        if nc > 1:
-            raise SelectError("Only one of canvas, lat/long, dist, image allowed")
-        
-        if canvas_x is not None or canvas_y is not None:
-            x_image, y_image = sc.canvas2image(canvas_x, canvas_y)
-            lat, long = gmi.pixelToLatLong((x_image, y_image))
-            x_dist, y_dist = gmi.getPos(xY=(x_image, y_image), unit=unit)
-        elif lat is not None or long is not None:
-            x_image, y_image = gmi.getXY(latLong=(lat,long))
-            x_dist, y_dist = gmi.getPos(latLong=(lat,long), unit=unit)
-            canvas_x, canvas_y = sc.image2canvas(x_image,y_image)
-        elif x_image is not None or y_image is not None:
-            x_dist, y_dist = gmi.getPos(xY=(x_image,y_image), unit=unit)
-            canvas_x, canvas_y = sc.image2canvas(x_image, y_image)
-            lat, long = gmi.getLatLong(xY=(x_image,y_image))
-        elif x_dist is not None or y_dist is not None:
-            x_image, y_image = gmi.getXY(pos=(x_dist,y_dist), unit=unit)
-            canvas_x, canvas_y = sc.image2canvas(x_image, y_image)
-            lat, long = gmi.getLatLong()(xY=(x_image,y_image))
-                        
-        self.canvas_x = canvas_x
-        self.canvas_y = canvas_y
-        self.lat = lat
-        self.long = long
-        self.x_dist = x_dist
-        self.y_dist = y_dist
-        self.x_image = x_image
-        self.y_image = y_image        
+from mapping_control import MappingControl
+import survey_point_manager
 
 class ScrolledCanvas(Frame):
     def __init__(self, fileName=None, gmi=None, image=None, title=None, parent=None,
                  maptype=None,
+                 map_address=None,
                  width=None, height=None,
                  mouse_down_call=None,
                  mouse_double_down_call=None,
                  mouse_up_call=None,
                  mouse_move_call=None,
                  resize_call=None,
+                 map_ctl = None,
+                 pt_mgr = None,
+                 trailfile=None,
                  unit='m'
                  ):
         """
@@ -76,6 +33,10 @@ class ScrolledCanvas(Frame):
         :mouse_move_call: if present, function to call with x,y canvas coordinates
                              on mouse motion
         :resize_call: call after resize, if present
+        :pt_mgr: point manager(SurveyPointManager) manage test points
+                    default: create
+        :map_ctl: Mapping Control (MappingControl) interface accessing addresses
+                default: create
         :unit: Linear distance unit m(eter), y(ard), f(oot) - default: "m" - meter
         """
         self.isDown = False
@@ -91,6 +52,11 @@ class ScrolledCanvas(Frame):
         self.resize_call = resize_call
         self.unit = unit
         self.imOriginal = None      # For restoration/resize without loss
+        self.standalone = False
+        if parent is None:
+            parent = Toplevel()
+            self.standalone = True
+        self.parent = parent
         Frame.__init__(self, parent)
         self.pack(expand=YES, fill=BOTH)
         self.canvas_container_frame = Frame(self)        # Used to hold frame which will be destroyed/reset when  updated
@@ -108,6 +74,7 @@ class ScrolledCanvas(Frame):
                 title = "Map Scroller"
         self.title = title
         self.maptype = maptype
+        self.map_address = map_address
         self.gmi = None
         self.image = None
         self.width = width
@@ -121,7 +88,27 @@ class ScrolledCanvas(Frame):
         else:
             ###raise SelectError("Must provide one of fileName, gmi, or image")
             SlTrace.lg("ScrolledCanvas: Blank Start")
+        if pt_mgr is None:
+            pt_mgr = survey_point_manager.SurveyPointManager(self,
+                                                              trailfile=trailfile)
+        self.pt_mgr = pt_mgr
+        if map_ctl is None:
+            map_ctl = MappingControl(mgr=pt_mgr, address=map_address)
+        self.map_ctl = map_ctl
+        self.set_resize_call(pt_mgr.resize)
 
+    def get_pt_mgr(self):
+        """ Return pt manager, created or passed in
+        :returns: point manager (SurveyPointManager)
+        """
+        return self.pt_mgr
+    
+    def get_map_ctl(self):
+        """ Get mapping control (MappingControl), created or passed in
+        :returns: return mapping control (MappingControl)
+        """
+        return self.map_ctl 
+    
     def set_resize_call(self, called):
         """ Link resize event to probably SurveyPointManager.resize
         :called:  function called with event
@@ -132,7 +119,7 @@ class ScrolledCanvas(Frame):
         # determine the ratio of old width/height to new width/height
         if self.imOriginal is None:
             return                      # Nothing yet
-        
+        self.update()                   # Insure sizing completed
         new_width = event.width
         new_height = event.height
         self.canvas_width = new_width
@@ -141,11 +128,21 @@ class ScrolledCanvas(Frame):
         # resize the canvas 
         ###self.config(width=self.width, height=self.height)
         # rescale all the objects tagged with the "all" tag
+        self.size_image_to_canvas()
+    
+    def size_image_to_canvas(self):
+        self.update()
+        if self.canv is None:
+            return
+        
+        self.canvas_width = self.canv.winfo_width()
+        self.canvas_height = self.canv.winfo_height()
         self.image = self.imOriginal.resize((self.canvas_width, self.canvas_height))
         self.canv.config(scrollregion=(0,0,self.canvas_width,self.height))
         self.im2=PIL.ImageTk.PhotoImage(self.image)
         self.imgtag=self.canv.create_image(0,0,anchor="nw",image=self.im2)
         self.lower_image()
+        self.update()                   # Insure sizing completed
         if self.resize_call is not None:
             self.resize_call()
             
@@ -424,6 +421,19 @@ class ScrolledCanvas(Frame):
 
         self.update_gmi(gmi)
 
+    def update_general(self, **kwargs):
+        """ Update with GoogleMapImage spec 
+        :kwargs:  GoogleMapImage parameters
+        """
+
+        if self.maptype is not None and 'maptype' not in kwargs:
+            kwargs['maptype'] = self.maptype        
+        gmi = GoogleMapImage(**kwargs)
+        if gmi is None:
+            raise SelectError(f"Can't load GoogleMapImage(latLong{latLong}")
+        
+        self.update_gmi(gmi)
+
     def update_lat_long(self, latLong, **kwargs):
         """ Update with latitude/longitude spec 
         :latLong: upper left corner (lat,long) + GoogleMapImage parameters
@@ -447,7 +457,7 @@ class ScrolledCanvas(Frame):
         """ Update gmi, image, and canvas
         :gmi: (GoogleMapImage
         """
-        if self.gmi is not None:
+        if self.gmi is not None and False:      # TFD avoid destroying 
             self.gmi.destroy()
         self.gmi = gmi
         self.update_image(gmi.image)
@@ -456,7 +466,7 @@ class ScrolledCanvas(Frame):
         """ Release any resources
         present for uniformity
         """
-        pass
+        self.canv = None
     
     def update_image(self, image):
         """ Update image, and canvas

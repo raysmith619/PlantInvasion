@@ -359,15 +359,14 @@ class GoogleMapImage:
             self.lrLat = info["lrLat"]
             self.lrLong = info["lrLong"]
             self.image = image
-        else:
-            if self.xOffset is not None or self.yOffset is not None:
-                xOffset = 0. if self.xOffset is None else self.xOffset
-                yOffset = 0. if self.yOffset is None else self.yOffset
-                xOffset_m = xOffset/self.unitLen()
-                yOffset_m = yOffset/self.unitLen()
-                ulLat, ulLong = geoMove((ulLat,ulLong), latDist=-yOffset_m, longDist=xOffset_m)
-                                
-            if mapPoints is not None:
+        else:           # Canculate dimensions
+            if (ulLat is not None and ulLong is not None
+                  and lrLat is not None and lrLong is not None):
+                self.ulat = ulLat
+                self.ulLong = ulLong
+                self.lrLat = lrLat
+                self.lrLong = lrLong
+            elif mapPoints is not None:
                 ulLatLong, lrLatLong = GeoDraw.boundLatLong(points=mapPoints, mapRotate=mapRotate,
                                                        borderM=mapBorderM,
                                                        borderD=mapBorderD,
@@ -387,24 +386,31 @@ class GoogleMapImage:
                       + "height=%.6g width=%.6g diagonal=%.6g" %
                       (height, width, diagonal))
             else:
+                if self.xOffset is not None or self.yOffset is not None:
+                    xOffset = 0. if self.xOffset is None else self.xOffset
+                    yOffset = 0. if self.yOffset is None else self.yOffset
+                    xOffset_m = xOffset/self.unitLen()
+                    yOffset_m = yOffset/self.unitLen()
+                    ulLat, ulLong = geoMove((ulLat,ulLong), latDist=-yOffset_m, longDist=xOffset_m)
+                                        
                 if xDim is not None:
                     if yDim is None:
                         yDim = xDim
                     if lrLat is not None or lrLong is not None:
                         raise SelectError(f"xDim present - can't have lrLat({lrLat}, lrLong({lrLong})")
-                unitLen = self.unitLen()
-                latDist = -yDim/unitLen     # y increases downward, lat increases upward
-                longDist = xDim/unitLen     # x increases rightward, longitude increases(less negative) rightward
-                lrLat, lrLong = geoMove((ulLat,ulLong), latDist=latDist, longDist=longDist)
-            self.ulLat = ulLat
-            self.ulLong = ulLong
-            self.lrLat = lrLat
-            self.lrLong = lrLong
+                        
+                    unitLen = self.unitLen()
+                    latDist = -yDim/unitLen     # y increases downward, lat increases upward
+                    longDist = xDim/unitLen     # x increases rightward, longitude increases(less negative) rightward
+                    lrLat, lrLong = geoMove((ulLat,ulLong), latDist=latDist, longDist=longDist)
             SlTrace.lg("GogleMapImage: ulLat=%.5f ulLong=%.5f lrLat=%.5f lrLong=%.5f" %
                                 (ulLat, ulLong, lrLat, lrLong))
             SlTrace.lg("             corner to corner:= %.2f meters" %
                                  geoDistance(latLong=(ulLat, ulLong), latLong2=(lrLat, lrLong)))
-            
+            self.ulLat = ulLat
+            self.ulLong = ulLong
+            self.lrLat = lrLat
+            self.lrLong = lrLong
             if scale is None:
                 scale = 1
             self.scale = scale
@@ -421,7 +427,6 @@ class GoogleMapImage:
             if file is None:
                 file = self.makeFileName()
             self.file = file                # Save name, if specified
-     
             self.image = self.getImage()
         self.geoDraw = GeoDraw(self.image,
                                ulLat=self.ulLat, ulLong=self.ulLong,
@@ -1084,15 +1089,42 @@ class GoogleMapImage:
         """
         self.geoDraw.addSample(point)
 
-    def addSamples(self, points=None, title=None):
-        return self.geoDraw.addSamples(points=points, title=title)
-
-    def addTrail(self, points, title=None):
+    def addSamples(self, points, title=None, color=None,
+                   show_LL=True):
         """ Add trail, given ll points
-        :points: GPXPoints
+        First try just add line segments connecting thepoints
+        :points: sample points (SamplePoint)
+        :title: title (may be point file full path)
+        :color: color for sample
+        :show_LL: show Latitude, longitude
         """
-        return self.geoDraw.addTrail(points, title=title)
+        return self.geoDraw.addSamples(points=points, title=title,
+                                       color=color, show_LL=show_LL)
 
+    def addTrail(self, gpx, title=None,
+                 color_code=False,color="orange",
+                 keep_outside=True):
+        """
+        :gpx: GPXFile trail info, tracks...
+        :title: title (may be point file full path)
+        :color: trail color
+        :color_code: color code longer point distances
+        :keep_outside: Keep points even if outside region,
+                False: skip points outside region
+                default: keep
+        """
+        return self.geoDraw.addTrail(gpx, title=title,
+                            color_code=color_code,
+                            color=color,
+                            keep_outside=keep_outside)
+
+    def is_inside(self, latLong=None, pos=None, xY=None):
+        """ Test if point is within map borders
+        :latLong, pos, xY: location as in getXY,
+        :returns: True if inside
+        """
+        return self.geoDraw.is_inside(latLong=latLong, pos=pos, xY=xY)
+    
     def markPoint(self, point):
         """
         Mark point - mostly for debugging

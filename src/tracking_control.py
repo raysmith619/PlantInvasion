@@ -14,8 +14,9 @@ from select_trace import SlTrace
 from select_control_window import SelectControlWindow
 from point_place import PointPlace
 from point_place_two import PointPlaceTwo
-from select_list import SelectList
+from select_list_ckbox import SelectList        # TEMP - select_list will be extended
 from survey_point import SurveyPoint
+from survey_region import SurveyRegion
 
 class TrackingControl(SelectControlWindow):
     """ Collection of point selection controls
@@ -90,8 +91,8 @@ class TrackingControl(SelectControlWindow):
         controls_frame.pack(side="top", fill="x", expand=True)
         self.controls_frame = controls_frame
 
-        pogressive_connection_frame = Frame(controls_frame)
-        self.set_fields(pogressive_connection_frame, "auto_tracking", "Auto-Track")
+        progressive_connection_frame = Frame(controls_frame)
+        self.set_fields(progressive_connection_frame, "auto_tracking", "Auto-Track")
         self.set_radio_button(field="auto_track", label="none", command=self.change_auto_tracking,
                               value="none", set_value=self.auto_tracking)
         self.set_radio_button(field="auto_track", label="adjacent_pairs::1-2,2-3", value="adjacent_pairs",
@@ -105,6 +106,8 @@ class TrackingControl(SelectControlWindow):
         self.set_fields(region_control_frame, "region_control", "Region")
         self.set_button(region_control_frame, "complete_region", "Complete Region",
                          command=self.complete_region)
+        self.set_button(region_control_frame, "show_trail_points", "Show Trail Points",
+                         command=self.show_region_trail_points)
         self.set_button(region_control_frame, "restart_region", "Restart Region",
                          command=self.restart_region)
         self.set_button(region_control_frame, "clear_tracking", "Clear Tracking",
@@ -189,12 +192,13 @@ class TrackingControl(SelectControlWindow):
             return              # No auto tracking
         
         if self.current_region is None:
-            self.current_region = []
-        self.current_region.append(self.mgr.points[-1])     # Add most recent point
+            self.current_region = SurveyRegion(self.mgr)
+        self.current_region.add_points(self.mgr.points[-1])     # Add most recent point
         if self.auto_tracking == "adjacent_pairs":
             """ Track (connect) points in current region """
-            if self.current_region is not None and len(self.current_region) > 1:
-                self.track_two_points(self.current_region[-2], self.current_region[-1])
+            if self.current_region is not None and len(self.current_region.points) > 1:
+                self.track_two_points(self.current_region.points[-2],
+                                      self.current_region.points[-1])
                 
     def change_connection_line(self, connection_line):
         if connection_line is None:
@@ -227,18 +231,118 @@ class TrackingControl(SelectControlWindow):
         if self.current_region is None:
             return False
         
-        if len(self.current_region) < 3:
+        if not self.current_region.complete_region():
             return False
         
-        self.track_two_points(self.current_region[-1], self.current_region[0])
+        # Track completion edge
+        self.track_two_points(self.current_region.points[-1],
+                              self.current_region.points[0])
         self.regions.append(self.current_region)
         self.current_region = None
         return True
+
+
+    def get_region(self, index=-1): 
+        """ Get region
+        :index:  region index default: -1 => most recently created
+        :returns: region (SurveyRegion) None if not one
+        """
+        return None if len(self.regions) == 0 else self.regions[index]
 
     def restart_region(self):
         """ Restart region collection (with next point)
         """
         self.current_region = None
+        
+    def select_region_trail_points(self):
+        """ select region trail points
+        If no region, show all trail points
+        """
+        (t_points, t_show_list) = self.get_region_trail_points()
+        x0 = 300
+        y0 = 400
+        width = 200
+        height = 400
+        SlTrace.lg(f"x0={x0}, y0={y0}, width={width}, height={height}", "select_list")                    
+        app = SelectList(title="Select Trail Points",
+                         ckbox=True,
+                         items=t_show_list,
+                         position=(x0, y0), size=(width, height))
+        selecteds = app.get_selected()
+
+        
+    def get_region_trail_points(self):
+        """ Get region trail points
+        If no region, show all trail points
+        :returns: (points, list of selection display items)
+        """
+        region = self.get_region()
+        if region is None:
+            SlTrace.lg("No region - show all points")
+        
+        trail_selection = self.mgr.get_point_list("trails")
+        if trail_selection is None:
+            SlTrace.lg("Trail added")
+            self.mgr.add_trail_file(self.mgr.trailfile)
+            trail_selection = self.mgr.get_point_list("trails")
+            
+        
+        gpx = trail_selection.point_list
+        trail_segments = gpx.get_segments()
+        if region is not None:
+            list_segments = []
+            for seg in trail_segments:      # Add segment if any point is inside
+                for pt in seg.get_points:
+                    if region.is_inside(pt):
+                        list_segments.append(seg)
+                        break 
+        else:
+            list_segments = trail_segments
+        
+        unit = self.unit
+        points = []
+        show_list = []
+        for iseg, seg in enumerate(list_segments):
+            seg_points = seg.get_points()
+            seg_no = iseg + 1
+            for i, seg_point in enumerate(seg_points):
+                if i == 0:
+                    prev_point = seg_point
+                else:
+                    prev_point = points[i-1]
+                prev_latLong = (prev_point.lat,prev_point.long)
+                latLong = (seg_point.lat, seg_point.long)
+                delta = self.mgr.sc.gmi.geoDist(prev_latLong, latLong)
+                x_d, y_d = self.mgr.sc.gmi.getPos(latLong=latLong)
+                label = f"t{seg_no}.{i+1}"
+                show_list.append(f"{label}:   x:{x_d:.1f}{unit} y:{y_d:.1f}{unit}"
+                                 f"   delta: {delta:.1f}{unit}"
+                                 f"   lat:{seg_point.lat} Long:{seg_point.long}")
+                track_point = self.mgr.get_point_labeled(label) # Don't duplicate
+                if track_point is None:
+                    track_point = SurveyPoint(self.mgr, label=label,
+                                    lat=seg_point.lat, long=seg_point.long,
+                                    display_size=8,
+                                    color="black")
+                    self.mgr.add_point(track_point, track=False)
+                points.append(track_point)
+        return (points, show_list)
+        
+    def show_region_trail_points(self):
+        """ Show region trail points
+        If no region, show all trail points
+        """
+        (_, t_show_list) = self.get_region_trail_points()
+        x0 = 300
+        y0 = 400
+        width = 200
+        height = 400
+        SlTrace.lg(f"x0={x0}, y0={y0}, width={width}, height={height}", "select_list")                    
+        app = SelectList(title="Trail Points",
+                         items=t_show_list,
+                         position=(x0, y0), size=(width, height))
+        app.get_selected()
+        
                             
     def track_one_point(self, name=None):
         """ Track one point
@@ -328,6 +432,10 @@ class TrackingControl(SelectControlWindow):
                          items=point_labels,
                          position=(x0, y0), size=(width, height))
         point_label = app.get_selected()
+        if point_label is None:
+            self.report("NO point selected")
+            return
+        
         point1 = self.mgr.get_point_labeled(point_label)
         if point1 is not None:
             self.report(f"Point {point_label} is already in the map")

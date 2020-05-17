@@ -57,10 +57,12 @@ SlTrace.lg(pgm_info)
 ###SlTrace.setTraceFlag("get_next_val", 1)
 trace = ""
 undo_len=200           # Undo length (Note: includes message mcd
+
 profile_running = False
 lat = 42.34718
 long = -71.07317
 lat_long = None
+show_samples_lat_lon = False    # No lat/long for samples
 test_lat_long = (lat,long)
 address = None
 test_address = "24 Chapman St., Watertown, MA, US"
@@ -86,6 +88,8 @@ parser.add_argument('-i', '--infofile=', dest='infoFile', default=infoFile)
 parser.add_argument('-f', '--image_file_name', '--file', dest='image_file_name', default=image_file_name)
 parser.add_argument('-l', '--lat_long', dest='lat_long', default=lat_long)
 parser.add_argument('--profile_running', type=str2bool, dest='profile_running', default=profile_running)
+parser.add_argument('-s', '--show_ll', dest='show_samples_lat_lon',
+                      default=show_samples_lat_lon)
 parser.add_argument('--trace', dest='trace', default=trace)
 parser.add_argument('--undo_len', type=int, dest='undo_len', default=undo_len)
 parser.add_argument('-w', '--width=', type=int, dest='width', default=width)
@@ -96,6 +100,7 @@ address = args.address
 lat_long = args.lat_long
 image_file_name = args.image_file_name
 profile_running = args.profile_running
+show_samples_lat_lon = args.show_samples_lat_lon
 trace = args.trace
 if trace:
     SlTrace.setFlags(trace)
@@ -186,7 +191,8 @@ def add_sample_file():
         sys.exit(1)
         
     spx = SampleFile(samplefile)
-    sc.gmi.addSamples(points=spx.get_points(), title=samplefile)
+    sc.gmi.addSamples(points=spx.get_points(), title=samplefile,
+                      show_LL=show_samples_lat_lon)
     sc.set_size()
     sc.lower_image()        # Place map below points/lines
     if pt_mgr is not None:
@@ -196,36 +202,13 @@ trailfile = "trails_from_averaged_waypoints_CORRECTED_9nov2018"
 def add_trail_file():
     """ add trail file to display
     """
-    global trailfile
-    
-    if trailfile is None:
-        trailfile = filedialog.askopenfilename(
-            initialdir= "../data/trail_system_files",
-            title = "Open trail File",
-            filetypes= (("trail files", "*.gpx"),
-                        ("all files", "*.*"))
-                       )
-        if trailfile is not None:
-            SlTrace.report(f"No file selected")
-            sys.exit(1)
-
-    if not os.path.isabs(trailfile):
-        trailfile = os.path.join("..", "data", "trail_system_files", trailfile)
-        if not os.path.isabs(trailfile):
-            trailfile = os.path.abspath(trailfile)
-            if re.match(r'.*\.[^.]+$', trailfile) is None:
-                trailfile += ".gpx"         # Add default extension
-    if not os.path.exists(trailfile):
-        SlTrace.report(f"File {trailfile} not found")
-        sys.exit(1)
-        
-    gpx = GPXFile(trailfile)
-    sc.gmi.addTrail(points=gpx.get_points(), title=trailfile)
-    sc.set_size()
-    sc.lower_image()        # Place map below points/lines
     if pt_mgr is not None:
-        pt_mgr.add_point_list(gpx, name="trails", title=trailfile)
+        pt_mgr.add_trail_file(trailfile)
 
+def map_region():
+    if pt_mgr is not None:
+        if not pt_mgr.map_region():
+            SlTrace.report("No region created")
 
 def map_someplace():
     if pt_mgr is None:
@@ -297,15 +280,15 @@ app.add_menu_command("Adjust View", adjust_view)
 app.add_menu_command("Track Points", track_points)
 app.add_menu_command("Add Trail File", add_trail_file)
 app.add_menu_command("Add Sample File", add_sample_file)
-
+app.add_menu_command("Map Region", map_region)
 
 if map_file == "TEST":
     map_file = test_map_file
     
-sc = ScrolledCanvas(fileName=map_file, width=width, height=height, parent=app)
-pt_mgr = SurveyPointManager(sc)
-map_ctl = MappingControl(mgr=pt_mgr, address=test_address)
-sc.set_resize_call(pt_mgr.resize)
+sc = ScrolledCanvas(fileName=map_file, width=width, height=height, parent=app,
+                    trailfile=trailfile)
+pt_mgr = sc.get_pt_mgr()
+map_ctl = sc.get_map_ctl()
 if address is not None:
     if address == "ASK":
         address = None

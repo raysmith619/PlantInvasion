@@ -13,7 +13,7 @@ from idlelib.colorizer import color_config
 from pandas._libs.tslibs.offsets import get_firstbday
 
 from select_trace import SlTrace
-from gpx_file import GPXPoint
+from gpx_file import GPXFile
 
 EARTH_RADIUS = 6378137.
 EQUATOR_CIRCUMFERENCE = 2 * pi * EARTH_RADIUS
@@ -481,12 +481,17 @@ class GeoDraw:
         self.text("North", xY=label_pt, font=north_label_font, fill=arrow_color)
 
 
-    def addTrail(self, points_in, title=None, color_code=False):
-        """ Add trail, given ll points
-        First try just add line segments connecting thepoints
-        :points_in: raw GPXPoints
+    def addTrail(self, gpx_in, title=None, color_code=False,color="orange",
+                 keep_outside=True):
+        """
+        :gpx_in: trail raw info (GPXFile)
         :title: title (may be point file full path)
+        :color: trail color
         :color_code: color code longer point distances
+        :keep_outside: Keep points even if outside region
+                further back than self.max_dist_allowed,
+                False: skip points outside region
+                default: keep
         """
         if title is not None:
             self.title = os.path.basename(title)
@@ -494,22 +499,41 @@ class GeoDraw:
             self.addTitle(self.title, xY=title_xy)
         self.trail_width = 2.       # Trail width in meters
         self.max_dist_allowed = 150.
-        points = self.cleanTrail(points_in)
+        gpx = self.cleanTrail(gpx_in, keep_outside=keep_outside)
+        for track in gpx.get_segments():
+            points = track.get_points()
+            if color_code:
+                return self.addTrail_color_code(points)
+            
+            line_width = int(self.meterToPixel(self.trail_width))
+            line_points = []
+            for point in points:
+                latLong = (point.lat, point.long)
+                xY = self.getXY(latLong=latLong)
+                line_points.append(xY)
+            self.line(line_points, width=line_width,
+                        fill=color)
+        return True
+            
+    def addTrail_color_code(self, points):
+        """ Do map with color coded line segments
+        :points:
+        :title:
+        """
         prev_point = None
         for i, point in enumerate(points):
             if prev_point is not None:
                 line_len = abs(self.geoDist(prev_point.latLong(), point.latLong()))
                 line_color = None
-                if color_code:
-                    if line_len > 100:
-                        line_color = "red"
-                        SlTrace.lg(f"point {i+1}: {point} is at a distance {line_len:.1f}m")
-                    elif line_len > 20:
-                        line_color = "blue"
-                    elif line_len > 10:
-                        line_color = "green"
-                    elif line_len > 5:
-                        line_color = "yellow"
+                if line_len > 100:
+                    line_color = "red"
+                    SlTrace.lg(f"point {i+1}: {point} is at a distance {line_len:.1f}m")
+                elif line_len > 20:
+                    line_color = "blue"
+                elif line_len > 10:
+                    line_color = "green"
+                elif line_len > 5:
+                    line_color = "yellow"
                 if line_len > self.max_dist_allowed:
                     SlTrace.lg(f"Ignoring Suspicious line {i+1}:"
                                f" {prev_point} to {point} as being too long: {line_len:.1f}m")
@@ -520,10 +544,14 @@ class GeoDraw:
         return True
 
     
-    def addSample(self, point, color="red"):
+    def addSample(self, point, color="red",
+                  show_LL=True):
         """
         Add sample to current image
-        point: SamplePoint
+        :point: SamplePoint
+        :color: sample label color
+        :show_LL: show Latitude, Longitude
+                default: True - show LL
     
         """
         label_color = (255,0,0)
@@ -554,7 +582,7 @@ class GeoDraw:
         self.circle(xY=xY, radius=cent_radius_pixel, fill=cent_color)
         # get a font
         # use a truetype font
-        if self.showSampleLL:
+        if show_LL:
             latlong_size = int(latlong_size)
             loc_string = "%.5f\n%.5f" % (long, lat)
             font_loc = ImageFont.truetype("arial.ttf", size=latlong_size)
@@ -566,20 +594,23 @@ class GeoDraw:
                        fill=(255,255,255,255))    
 
 
-    def addSamples(self, points, title=None, color=None):
+    def addSamples(self, points, title=None, color=None,
+                   show_LL=True):
         """ Add trail, given ll points
         First try just add line segments connecting thepoints
         :points: sample points (SamplePoint)
         :title: title (may be point file full path)
         :color: color for sample
+        :show_LL: show Latitude, longitude
         """
         if title is not None:
             self.title = os.path.basename(title)
             title_xy = (self.getWidth()*.5, self.getHeight()*.1)
             self.addTitle(self.title, xY=title_xy)
         for point in points:
-            self.addSample(point, color=color)
+            self.addSample(point, color=color, show_LL=show_LL)
         return True
+
             
     def addTrailLine(self, p1, p2, color=None):
         """ Do trail segment from p1, 2p
@@ -592,12 +623,19 @@ class GeoDraw:
         self.lineSeg(latLong=(p1.lat,p1.long), latLong2=(p2.lat,p2.long), width=int(line_width),
                      fill=color)
 
-    def cleanTrail(self, points_in):
+    def cleanTrail(self, gpx_in, keep_outside=True):
         """ Adjust initial points to most likely to be valid measurements
             Assemble trail stats
             1. Throw any points outside border
+            :gpx_in: raw trail info (GPXFile)
+            :keep_outside: Keep points even if outside region
+                or further back than self.max_dist_allowed
+                False: skip points outside region
+                default: keep
         """
-        points = []
+        return gpx_in           # TFD no changes
+    
+        gpx = GPXFile()
         n_diff = 0              # Number of distances (n good pts - 1)
         n_outside = 0
         dist_sum = 0.
@@ -607,9 +645,18 @@ class GeoDraw:
         for i, point in enumerate(points_in):
             if not self.is_inside(latLong=point.latLong()):
                 n_outside += 1
-                SlTrace.lg(f"Ignoring point {i+1}: {point} as outside border")
-                continue
-                
+                SlTrace.lg(f"Questioning point {i+1}: {point} as outside border", "clean_trail")
+                if not keep_outside:
+                    continue    # Skip point outside border
+            if i == 0 and len(points_in) > 1:
+                p1_ll = points_in[i].latLong()
+                p2_ll = points_in[i+1].latLong()
+                dist = abs(self.geoDist(p1_ll, p2_ll))
+                if dist > self.max_dist_allowed:
+                    n_outside += 1
+                    SlTrace.lg(f"Questioning point {i+1}: {point} as too far")
+                    if not keep_outside:
+                        continue
             point_prev = points[-1] if len(points) > 0 else None
             check_prev = True if point_prev is not None else False
             if i >= points_len-1:
@@ -641,7 +688,7 @@ class GeoDraw:
             SlTrace.lg(f"minimum distance: {min_dist:.1f}m maximum distance: {max_dist:.1f}m average: {avg_dist:.2f}m")
             SlTrace.lg(f"Total path distance: {dist_sum:.1f}m") 
 
-        return points
+        return gpx
         
     def addScale(self,
                 xY=None, pos=None, latLong=None,

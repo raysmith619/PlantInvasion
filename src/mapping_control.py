@@ -92,7 +92,7 @@ class MappingControl(SelectControlWindow):
     def __init__(self, mgr,
                  title=None, control_prefix=None,
                  name="",
-                 address="",
+                 address=None,
                  street1="",
                  street2="",
                  city="",
@@ -123,6 +123,8 @@ class MappingControl(SelectControlWindow):
         if control_prefix is None:
             control_prefix = MappingControl.CONTROL_NAME_PREFIX
         self.name = name
+        if address is None:
+            address = ""
         self.address = address
         self.street1 = street1
         self.street2 = street2
@@ -310,6 +312,7 @@ class MappingControl(SelectControlWindow):
                                          maptype=self.maptype,
                                          zoom=self.zoom)
         self.update()       # Force visual update
+        self.mgr.sc.size_image_to_canvas()
         fav =  self.get_favorite_from_ctl()
         fav_name = self.get_favorite_name(fav.name)
         fav.name = fav_name
