@@ -7,10 +7,11 @@ import os
 import sys
 import re
 from tkinter import *
+from tkinter.filedialog import asksaveasfilename
 
 from select_trace import SlTrace
 from select_error import SelectError
-from gpx_file import GPXFile
+from survey_trail import SurveyTrail
 
 from point_place import PointPlace
 from survey_point import SurveyPoint                
@@ -21,12 +22,40 @@ import scrolled_canvas
 
 class PointSelection:
     def __init__(self, point_list=None, name=None, title=None):
-        self.point_list = point_list
+        self.point_list = point_list    # External object e.g. GPXFile, SampleFile
         self.name = name
         self.title = title
         self.inside_points = None   # list of points inside region display, if known
         self.selected_points = []   # selected points if any
-                    
+
+class SelectTrail:
+    """ Trail information
+    to support loading, saving, manipulation of trails
+    """
+    def __init__(self, point_selection, segments=None):
+        """ Setup trail info
+        :point_selection: base info (PointSelection)
+        :trail_segments: internal segments (SurveySegment)
+        """
+        self.point_selection = point_selection
+        if segments is None:
+            segments = []
+        self.segments = segments
+    
+    
+    def add_points(self, *points):
+        """ Add point(s) to segment
+        :pts: zero or more args, each of which is a point or list of points
+         (GPXPoint) to add
+        """
+        for pts in points: 
+            if not isinstance(pts, list):
+                pts = [pts]         # Make list of one
+            self.points.extend(pts)
+            
+    def get_points(self):
+        return self.points
+    
 class SurveyPointManager:
     """ Manipulate a list of points (SurveyPoint)
     """
@@ -36,7 +65,8 @@ class SurveyPointManager:
                  point_type=None, center_color=None, color=None, label_no=None,
                  point_id=None,
                  trailfile=None,
-                 track_sc=True):
+                 track_sc=True,
+                 unit="m"):
         """ Setup point attributes
         :scanvas: canvas (ScrollableCanvas) on which points are positioned/displayed
         :display_size, select_size, point_type, center_color, color - default point attributes
@@ -45,10 +75,13 @@ class SurveyPointManager:
                 default: 1
         :track_sc:  track/display sc mouse motion
         :trailfile: trail file
+        :unit: distance units default: "m"
         """
                        
         self.sc = scanvas
         self.trailfile = trailfile
+        self.trail = None                   # Currently loaded trail
+        self.trail_segment = None           # Currently processed trail segment
         self.mapped_regions = []            # canvases of regions displayed
         self.mapped_regions.append(scanvas) # [0] base region
         if label is None:
@@ -80,12 +113,13 @@ class SurveyPointManager:
         self.point_id = point_id
         self.reset_points()
         self.track_sc = False           # Set True if tracking
-        if track_sc is not None:
+        if track_sc:
             self.track_cursor()
         self.in_point = None            # Set to point we're in, if any
         self.in_point_start = None      # Set to starting x,y
         self.in_point_is_down = False   # Set True while mouse is down
         self.doing_mouse_motion = False # Suppress multiple concurrent moves
+        self.unit = unit
         self.tr_ctl = TrackingControl(self)
         self.point_lists = {}           # Dictionary of point list e.g. SampleFile, GPXFile
         
@@ -93,7 +127,7 @@ class SurveyPointManager:
         """ start/restart tracking cursor
         """
         if not self.track_sc:
-            self.sc_point_place = PointPlace(self.sc, title="Curser Tracking")
+            self.sc_point_place = PointPlace(self.sc, title="Cursor Tracking")
             self.sc.set_mouse_down_call(self.mouse_down)
             self.sc.set_mouse_double_down_call(self.mouse_double_down)
             self.sc.set_mouse_up_call(self.mouse_up)
@@ -106,6 +140,11 @@ class SurveyPointManager:
         self.label_no = 1       # Reset point labeling
         self.point_id = 0
 
+    def restart_region(self):
+        """ Restart region collection (with next point)
+        """
+        self.tr_ctl.restart_region()
+        
     def resize(self):
         self.sc.update()
         self.redisplay()
@@ -184,11 +223,16 @@ class SurveyPointManager:
             self.in_point = point
             self.in_point_start = (pc.lat, pc.long)  # ref for movement
         else:
-            point = self.add_point(SurveyPoint(self, lat=pc.lat, long=pc.long))
-            self.in_point_is_down = True
-            self.in_point = point
-            self.in_point_start = (pc.lat, pc.long)
-
+            point = self.make_point(lat=pc.lat, long=pc.long)
+ 
+    def make_point(self, lat=None, long=None):
+        """ Create appropriate point for mouse click with current tracking state
+        :lat: latitude
+        :long: longitude
+        :returns: point (SurveyPoint)
+        """
+        return self.tr_ctl.make_point(lat=lat, long=long)
+    
     def mouse_double_down(self, canvas_x, canvas_y):
         """ Capture/process double click
         If we have a region of 3 or more points close region (connect end to beginning)
@@ -250,6 +294,7 @@ class SurveyPointManager:
     def show_tracking_control(self):
         """ Bring or re-bring tracking control to view
         """
+        
         self.track_cursor()
         self.tr_ctl = TrackingControl(self)
                 
@@ -287,7 +332,7 @@ class SurveyPointManager:
         self.points_by_label[point_label] = point
         point.display()
         if track:
-            self.tr_ctl.added_point()
+            self.tr_ctl.added_point(point)
         
         return point
 
@@ -309,44 +354,59 @@ class SurveyPointManager:
         
         return None
     
-    def add_trail_file(self, trailfile=None):
+    def add_trail_file(self, trailfile=None, show_points=False):
         """ Add trail file, asking if none
         :trailfile: trail file name
                 default: ask for name
+        :show_points: mark trail points
+                        default: False - don't show points
+        :returns: trail if OK, else None
+                sets self.trail
         """
-        sc = self.sc
-        if trailfile is None:
-            point_selection = self.get_point_list("trails")
-            if point_selection is not None:
-                gpx = point_selection.point_list
-            else:
-                trailfile = filedialog.askopenfilename(
-                    initialdir= "../data/trail_system_files",
-                    title = "Open trail File",
-                    filetypes= (("trail files", "*.gpx"),
-                                ("all files", "*.*"))
-                               )
-                if trailfile is not None:
-                    SlTrace.report(f"No file selected")
-                    return False
+        self.delete_trail()
+        trail = SurveyTrail(self, file_name=trailfile, show_points=show_points)
+        self.add_point_list(trail, name="trails", title=trailfile)
+        self.overlayTrail(trail, title=trailfile)
+        self.tr_ctl.trail = self.trail = trail      # synchronize tracking control
+        return trail
+
+    def delete_trail(self):
+        """ Remove trail, clearing display
+        """
+        if self.trail is not None:    
+            self.trail.delete()
+            self.trail = None
+            self.trail_segment = None
+            self.tr_ctl.trail = None        # Synchronize with tracking
+            self.tr_ctl.trail_segment = None
+            
+    def save_trail_file(self, trailfile=None):
+        """ Save updated trail file (From get_point_list("trails")
+        :trailfile: trail file name
+                default: ask for name
+        """
+        trail = self.trail
+        if trail is None:
+            return
         
-        else:            
-            if not os.path.isabs(trailfile):
-                trailfile = os.path.join("..", "data", "trail_system_files", trailfile)
-                if not os.path.isabs(trailfile):
-                    trailfile = os.path.abspath(trailfile)
-                    if re.match(r'.*\.[^.]+$', trailfile) is None:
-                        trailfile += ".gpx"         # Add default extension
-            if not os.path.exists(trailfile):
-                SlTrace.report(f"File {trailfile} not found")
+        initialfile = os.path.basename(trail.file_name)
+        if trailfile is None:
+            trailfile = asksaveasfilename(
+                initialdir= "../new_data",
+                initialfile=initialfile,
+                title = "New Trail File",
+                filetypes= (("trail files", "*.gpx"),
+                            ("all files", "*.*"))
+                           )
+            if trailfile is None:
+                SlTrace.report(f"No file selected")
                 return False
-            gpx = GPXFile(trailfile)
-        self.add_point_list(gpx, name="trails", title=trailfile)
-        sc.gmi.addTrail(gpx, title=trailfile,
-                        keep_outside=False)
-        sc.set_size()
-        sc.lower_image()        # Place map below points/lines
-        return True
+            
+        if os.path.exists(trailfile):
+            SlTrace.report(f"File {trailfile} already exists")
+        
+        trail.save_file(trailfile)   
+        
 
     def get_canvas(self):
         """ Get Canvas type object
@@ -397,16 +457,145 @@ class SurveyPointManager:
         return points_in
 
 
+    def overlayTitle(self, title, xY=None, size=None, color=None, **kwargs):
+        """ Like GeoDraw.addTitle, but overlay, to allow modification
+        """
+        canvas = self.get_canvas()
+        if xY is None:
+            title_xy = (self.getWidth()*.1, self.getHeight()*.05)
+        if size is None:
+            size = 16
+        if color is None:
+            color = "white"
+        title_font = ("tahoma", size)
+        title_xy = xY
+        self.trail_title_tag = canvas.create_text(title_xy,
+                                    font=title_font,
+                                     text=title, fill=color)
+
+    def overlayTrail(self, trail=None, title=None, color=None,
+                     color_points=None,
+                     show_points=False):
+        """ Display trail in the same manor as mgr.sc.addTrail()
+        but as an overlay, not changing the image, so that the
+        points and links can be dynamicly changed
+        :trail: trail info (SurveyTrail)
+        :title: title (may be point file full path)
+        :color: trail color default: orange
+        :show_points: Show points, default: False - points not shown
+        "color_points" points color default: same as color
+        :keep_outside: Keep points even if outside region
+                further back than self.max_dist_allowed,
+                False: skip points outside region
+                default: keep
+        :returns: trail (SurveyTrail) overlaid
+        """
+        if color is None:
+            color = "orange"
+        if color_points is None:
+            color_points = "black"
+            
+        if trail is None:
+            trail_selection = self.get_point_list("trails")
+            if trail_selection is None:
+                SlTrace.lg("Trail added")
+                self.add_trail_file(self.trailfile)
+                trail_selection = self.get_point_list("trails")
+            trail = trail_selection.point_list
+        if title is not None:
+            self.trail_title = os.path.basename(title)
+            title_xy = (self.getWidth()*.5, self.getHeight()*.05)
+            self.overlayTitle(self.trail_title, xY=title_xy)
+        self.trail_width = 2.       # Trail width in meters
+        self.max_dist_allowed = 150.
+        line_width = int(self.meterToPixel(self.trail_width))
+        prev_point = None
+        for track in trail.get_segments():
+            track_points = track.get_points()
+            for point_no, point in enumerate(track_points, start=1):
+                if point_no > 1:
+                    self.track_two_points(prev_point, point,
+                        color=color, width=line_width, display_monitor=False,
+                        line_type="line")
+                    if show_points:
+                        prev_point.display(displayed=True, color=color_points)        # Place on top of line segments
+                        point.display(displayed=True, color=color_points)
+                    else:
+                        # Use as "rounding at segment joining
+                        ###prev_point.display(displayed=True, color=color)        # Place on top of line segments
+                        ###point.display(displayed=True, color=color)
+                        pass                        
+                prev_point = point
+        sc = self.sc
+        sc.set_size()
+        sc.lower_image()        # Place map below points/lines
+        return trail
+    
+    def track_two_points(self, point1, point2,
+                         color=None, width=None,
+                         line_type=None,
+                         display_monitor=None):
+        """ Track (join) two points might be considered an edge
+        in crs_points
+        :point1: first point
+        :point2: second point
+        :color: color of connecting line
+        :line_type: type of connection line
+        :width: with of line in pixels
+        :display_monitor: show connection attributes in monitor
+            default: display
+        """
+        self.tr_ctl.track_two_points(point1, point2, color=color,
+                                     width=width, line_type=line_type,
+                                     display_monitor=display_monitor)
+
+    def get_gmi(self):
+        return self.sc.gmi
+    
+    def getHeight(self):
+        """ via GoogleMapImage
+        """
+        gmi = self.get_gmi()
+        return gmi.getHeight()
+
+    def getWidth(self):
+        """ via GoogleMapImage
+        """
+        gmi = self.get_gmi()
+        return gmi.getWidth()
+
+    def meterToPixel(self, meter):
+        """ via GoogleMapImage
+        """
+        gmi = self.get_gmi()
+        return gmi.meterToPixel(meter)
+
+    def hide_point(self, point):
+        """ Make point invisible, if not already
+        :point: point to see
+        """
+        point.display(displayed=False)
+        self.tr_ctl.show_point_tracking(point)
+
+
+    def show_point(self, point):
+        """ Make point visible, if not already
+        :point: point to see
+        """
+        self.tr_ctl.show_point_tracking(point)  # In case changed
+        point.display(displayed=True)
+
     def remove_point(self, point):
-        """ Remove point
+        """ Remove point, and any associated tracking
         :point: point to remove
         """
-        ids = [self.points[idx].point_id for idx in range(len(self.points))]
-        for idx in ids:
-            pt = self.points[idx]
-            if pt.point_id == point.point_id:
-                pt.delete()
-                del self.points[idx]
-                return pt
+        if point.label.lower() in self.points_by_label:
+            for idx, pt in enumerate(self.points):
+                if pt.point_id == point.point_id:
+                    self.tr_ctl.remove_point_tracking(pt)
+                    del self.points[idx]
+                    pt.delete()
+                    break
+            return pt
             
         return None

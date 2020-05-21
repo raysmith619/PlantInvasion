@@ -9,6 +9,8 @@ from select_trace import SlTrace
 from canvas_coords import CanvasCoords
 
 class PointPlace(Toplevel):
+    ID_PREFIX = "PP_"       # Unique tracking type prefix
+    id_no = 0               # id no for this tracking type
     # Display point position annotation
     SHOW_POINT_NONE = 1
     SHOW_POINT_LL = 2
@@ -92,6 +94,8 @@ class PointPlace(Toplevel):
         :cursor_info: displayed cursor info default: "lat_long"
         :unit: linear length unit m,y,f default: f
         """
+        PointPlace.id_no += 1
+        self.tracking_id = f"{PointPlace.ID_PREFIX}{PointPlace.id_no}"
         self.connection_line_tag = None # If we have a line
         self.dis_width = 10              # linear form entry width (char)
         self.px_width = 5               # pixel form entry width (char)

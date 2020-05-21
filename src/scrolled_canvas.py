@@ -20,10 +20,12 @@ class ScrolledCanvas(Frame):
                  mouse_up_call=None,
                  mouse_move_call=None,
                  resize_call=None,
+                 skip_map_ctl=False,
                  map_ctl = None,
                  pt_mgr = None,
                  trailfile=None,
-                 unit='m'
+                 unit='m',
+                 no_op=False,
                  ):
         """
         :fileName - image file, if present or info file if ending with .imageinfo else
@@ -35,6 +37,8 @@ class ScrolledCanvas(Frame):
         :resize_call: call after resize, if present
         :pt_mgr: point manager(SurveyPointManager) manage test points
                     default: create
+        :skip_map_ctl: True -don't do map control - find places window
+                    default: False - show window
         :map_ctl: Mapping Control (MappingControl) interface accessing addresses
                 default: create
         :unit: Linear distance unit m(eter), y(ard), f(oot) - default: "m" - meter
@@ -53,6 +57,12 @@ class ScrolledCanvas(Frame):
         self.unit = unit
         self.imOriginal = None      # For restoration/resize without loss
         self.standalone = False
+        self.gmi = None
+        self.image = None
+        self.no_op = no_op
+        if no_op:
+            return                  # Not a really functioning canvas, just a place holder 
+        
         if parent is None:
             parent = Toplevel()
             self.standalone = True
@@ -75,8 +85,6 @@ class ScrolledCanvas(Frame):
         self.title = title
         self.maptype = maptype
         self.map_address = map_address
-        self.gmi = None
-        self.image = None
         self.width = width
         self.height = height
         if gmi is not None:
@@ -93,7 +101,8 @@ class ScrolledCanvas(Frame):
                                                               trailfile=trailfile)
         self.pt_mgr = pt_mgr
         if map_ctl is None:
-            map_ctl = MappingControl(mgr=pt_mgr, address=map_address)
+            if not skip_map_ctl:
+                map_ctl = MappingControl(mgr=pt_mgr, address=map_address)
         self.map_ctl = map_ctl
         self.set_resize_call(pt_mgr.resize)
 

@@ -14,7 +14,7 @@ from select_trace import SlTrace
 from select_control_window import SelectControlWindow
 from point_place import PointPlace
 from point_place_two import PointPlaceTwo
-from select_list_ckbox import SelectList        # TEMP - select_list will be extended
+from select_list import SelectList        # TEMP - select_list will be extended
 from survey_point import SurveyPoint
 from survey_region import SurveyRegion
 
@@ -56,6 +56,8 @@ class TrackingControl(SelectControlWindow):
         self.cursor_info = cursor_info
         self.unit = unit
         self.auto_tracking = auto_tracking
+        self.trail = None
+        self.trail_segment = None
         self.tracked_items = []
         self.current_region = None  # list of points in order, else None
         self.regions = []       # list of completed regions, each a list of points
@@ -101,6 +103,20 @@ class TrackingControl(SelectControlWindow):
                               command=self.change_auto_tracking)
         self.set_radio_button(field="auto_track", label="every point: 1,2,3,4", value="every_point",
                               command=self.change_auto_tracking)
+        self.set_radio_button(field="auto_track", label="add to trail", value="add_to_trail",
+                              command=self.change_auto_tracking)
+        
+        trail_control_frame = Frame(controls_frame)
+        self.set_fields(trail_control_frame, "trail_control", "Trail")
+        self.set_button(trail_control_frame, "show_trail_points", "Show Points",
+                         command=self.show_trail_points)
+        self.set_button(trail_control_frame, "hide_trail_points", "Hide Points",
+                         command=self.hide_trail_points)
+        self.set_button(trail_control_frame, "delete_trail_points", "Delete Trail Points",
+                         command=self.delete_trail_points_chosen)
+        self.set_button(trail_control_frame, "add_start_trail", "Add/Start Trail Section",
+                         command=self.add_start_trail_segment)
+        self.set_entry(field="trail_number", label="Trail Number", value="", width=3)
         
         region_control_frame = Frame(controls_frame)
         self.set_fields(region_control_frame, "region_control", "Region")
@@ -122,20 +138,6 @@ class TrackingControl(SelectControlWindow):
         self.set_sep()
         self.set_button(field="untrack_point", label="Un-track", command=self.untrack_one_point)
 
-        point_file_frame = Frame(controls_frame)
-        self.set_fields(point_file_frame, "point_lists", title="Point Lists")
-        self.set_button(field="samples", label="Samples", command=self.track_samples)
-        self.set_button(field="trails", label="Trails", command=self.track_trails)
-
-        cursor_track_frame = Frame(controls_frame)
-        self.set_fields(cursor_track_frame, "cursor", title="Cursor")
-        self.set_radio_button(field="info", label="None", value="none", command=self.change_cursor_info,
-                              set_value=self.cursor_info)
-        self.set_radio_button(field="info", label="Latitude/longitude", value="lat_long", command=self.change_cursor_info)
-        self.set_radio_button(field="info", label="Distance", value="dist", command=self.change_cursor_info)
-        self.set_radio_button(field="info", label="Image", value="image", command=self.change_cursor_info)
-        self.set_radio_button(field="info", label="Canvas", value="canvas", command=self.change_cursor_info)
-
         two_point_frame = Frame(controls_frame)
         self.set_fields(two_point_frame, "two_points", title="Two points")
         self.set_button(field="track_two_points", label="Track", command=self.track_two_points_chosen)
@@ -143,6 +145,11 @@ class TrackingControl(SelectControlWindow):
         self.set_entry(field="second_point_name", label="second point", value="P2", width=4)
         self.set_sep()
         self.set_button(field="untrack_points", label="Un-track", command=self.untrack_two_points)
+
+        point_file_frame = Frame(controls_frame)
+        self.set_fields(point_file_frame, "point_lists", title="Point Lists")
+        self.set_button(field="samples", label="Samples", command=self.track_samples)
+        self.set_button(field="trails", label="Trails", command=self.track_trails)
 
         connection_frame = Frame(controls_frame)
         self.set_fields(connection_frame, "connection", title="Connection Line")
@@ -161,6 +168,15 @@ class TrackingControl(SelectControlWindow):
         self.set_radio_button(frame=unit_frame, field="unit", label="yard", value= "y", command=self.change_unit)
         self.set_radio_button(frame=unit_frame, field="unit", label="foot", value= "f", command=self.change_unit)
         self.set_radio_button(frame=unit_frame, field="unit", label="Smoot", value= "s", command=self.change_unit)
+
+        cursor_track_frame = Frame(controls_frame)
+        self.set_fields(cursor_track_frame, "cursor", title="Cursor")
+        self.set_radio_button(field="info", label="None", value="none", command=self.change_cursor_info,
+                              set_value=self.cursor_info)
+        self.set_radio_button(field="info", label="Latitude/longitude", value="lat_long", command=self.change_cursor_info)
+        self.set_radio_button(field="info", label="Distance", value="dist", command=self.change_cursor_info)
+        self.set_radio_button(field="info", label="Image", value="image", command=self.change_cursor_info)
+        self.set_radio_button(field="info", label="Canvas", value="canvas", command=self.change_cursor_info)
         
         self.arrange_windows()
         if not self.display:
@@ -185,15 +201,137 @@ class TrackingControl(SelectControlWindow):
         for tracked in self.tracked_items:
             tracked.redisplay()
 
-    def added_point(self):
+    def meterToPixel(self, meter):
+        """ via GoogleMapImage
+        """
+        return self.mgr.meterToPixel(meter)
+
+    
+    def add_trail_file(self, trailfile=None, show_points=False):
+        """ Add trail file, asking if none
+        :trailfile: trail file name
+                default: ask for name
+        :show_points: mark trail points
+                        default: False - don't show points
+        :returns: trail (SurveyTrail) if OK, else None
+        """
+        self.trail = self.mgr.add_trail_file(trailfile=trailfile, show_points=show_points)
+        return self.trail
+
+    def overlayTrail(self, trail=None, title=None, color=None,
+                     color_points=None,
+                     show_points=False):
+        """ Display trail in the same manor as mgr.sc.addTrail()
+        but as an overlay, not changing the image, so that the
+        points and links can be dynamicly changed
+        :trail: trail info (SurveyTrail)
+        :title: title (may be point file full path)
+        :color: trail color default: orange
+        :show_points: Show points, default: False - points not shown
+        "color_points" points color default: same as color
+        :keep_outside: Keep points even if outside region
+                further back than self.max_dist_allowed,
+                False: skip points outside region
+                default: keep
+        :returns: trail (SurveyTrail) overlaid
+        """
+        self.trail = self.mgr.overlayTrail(trail=trail, title=title, color=color,
+                     color_points=color_points,
+                     show_points=show_points)
+        return self.trail
+    
+    def add_start_trail_segment(self):
+        """ Add to the end of a named trail or start a new trail with mouse clicks
+        Short cut for setting auto-tracking
+        """
+        trail_number = self.get_val_from_ctl("trail_control.trail_number")
+        trail = self.overlayTrail(show_points=True)
+        if trail_number == "":
+            segment = trail.add_new_segment()
+        else:
+            try:
+                trail_number = int(trail_number)
+            except:
+                self.report(f"trail_Number {trail_number} is not a valid number")
+                return
+            segment = trail.get_segment(trail_number)
+            if segment is None:
+                self.report(f"No trail segment number {trail_number}")
+                return
+            
+        self.trail_segment = segment
+        new_auto_track = "add_to_trail"
+        self.set_ctl_val("auto_tracking.auto_track", new_auto_track)
+        self.change_auto_tracking(new_auto_track)
+
+    def add_point_to_trail(self, point):
+        """ Add point to current trail segment
+        :point:  point to be added to trail
+        """
+        trail = self.trail
+        segment = self.trail_segment
+        if segment is None:
+            if self.trail is None:
+                trail = self.mgr.overlayTrail(show_points=True)
+            segment = trail.add_new_segment()
+        prev_point = segment.get_end_point()    
+        if prev_point is not None:
+            self.track_two_points(prev_point, point,
+                color=trail.color, width=trail.line_width, display_monitor=False,
+                line_type="line")
+            prev_point.display(displayed=True, color=trail.color_points)        # Place on top of line segments
+            point.display(displayed=True, color=trail.color)
+        else:
+            point.display(displayed=True, color=trail.color)            
+        segment.add_points(point)
+
+    def make_point(self, lat=None, long=None):
+        """ Create appropriate point for mouse click with current tracking state
+        :lat: latitude
+        :long: longitude
+        :returns: point (SurveyPoint)
+        """
+        if (self.auto_tracking == "add_to_trail"
+            and self.trail is not None
+             and self.trail_segment is not None):
+            trail = self.trail
+            color_points = "black"
+            segment = self.trail_segment
+            seg_no = segment.segment_no
+            pt_no = len(segment.points)+1
+            label = self.trail.label_pattern % (seg_no, pt_no)
+            point = SurveyPoint(self.mgr, label=label, color=color_points,
+                                lat=lat, long=long)
+            segment.add_points(point)
+            self.mgr.add_point(point, track=False)
+            seg_points = segment.get_points()
+            if len(seg_points) > 1:
+                self.track_two_points(seg_points[-2], seg_points[-1],
+                         color=trail.color, width=trail.line_width,
+                         line_type=trail.line_type,
+                         display_monitor=trail.display_monitor)
+        else:
+            point = SurveyPoint(self.mgr, lat=lat, long=long)
+            self.mgr.in_point_is_down = True                        # Standard continuation for regualar new points
+            self.mgr.in_point = point
+            self.mgr.in_point_start = (lat, long)
+            self.mgr.add_point(point)
+        return point    
+            
+
+    def added_point(self, point):
         """ Make tracking adjustments given most recently added point
+        :point: point just added
         """
         if self.auto_tracking == "none":
             return              # No auto tracking
         
+        if self.auto_tracking == "add_to_trail":
+            return self.add_point_to_trail(point)
+        
         if self.current_region is None:
             self.current_region = SurveyRegion(self.mgr)
-        self.current_region.add_points(self.mgr.points[-1])     # Add most recent point
+        self.current_region.add_points(point)     # Add most recent point
         if self.auto_tracking == "adjacent_pairs":
             """ Track (connect) points in current region """
             if self.current_region is not None and len(self.current_region.points) > 1:
@@ -327,7 +465,138 @@ class TrackingControl(SelectControlWindow):
                     self.mgr.add_point(track_point, track=False)
                 points.append(track_point)
         return (points, show_list)
-        
+
+    def delete_region_trail_points(self):
+        """ Show region trail points, provide selection list,
+        delete selected points from view
+        If no region, show all trail points
+        """
+        (points, t_show_list) = self.get_region_trail_points()
+        points_by_show = {}
+        for i, pt in enumerate(points):
+            points_by_show[t_show_list[i]] = pt
+        x0 = 300
+        y0 = 400
+        width = 200
+        height = 400
+        app = SelectList(title="Delete Points", ckbox=True,
+                         items=t_show_list,
+                         position=(x0, y0), size=(width, height))
+        delete_list = app.get_checked()
+        for delete_label in delete_list:
+            self.mgr.remove_point(points_by_show[delete_label])
+
+    def delete_trail_points(self):
+        """ Show region trail points, provide selection list,
+        delete selected points from view
+        If no region, show all trail points
+        """
+        trail = self.mgr.overlayTrail(show_points=True)
+        seg_sep = "====="
+        points_by_show = trail.get_points_by_show()
+        show_items = trail.get_show_items(seg_sep=seg_sep)
+        x0 = 300
+        y0 = 400
+        width = 200
+        height = 400
+        app = SelectList(title="Delete Points", ckbox=True,
+                         items=show_items,
+                         item_sep=seg_sep,
+                         position=(x0, y0), size=(width, height))
+        delete_list = app.get_checked()
+        for delete_label in delete_list:
+            del_point = points_by_show[delete_label]
+            SlTrace.lg(f"delete point: {del_point}")
+            trail.delete_points(del_point)
+            self.mgr.remove_point(del_point)
+
+    def delete_trail_points_chosen(self):
+        region = self.get_region()
+        if region is not None:
+            self.delete_region_trail_points()
+        else:
+            self.delete_trail_points()
+
+    def hide_trail_points_chosen(self):
+        region = self.get_region()
+        if region is not None:
+            self.hide_region_trail_points()
+        else:
+            self.hide_trail_points()
+
+    def show_point_tracking(self, *points):
+        """ Display/redisplay tracking items/lines
+        for points given.
+        :ponts: zero or more args, each of which is a point or list of points
+        """
+        tracked_items = self.get_point_tracking(*points)
+        for item in tracked_items:
+            item.show()
+
+    def hide_point_tracking(self, *points):
+        """ Hide  tracking items/lines
+        for points given.
+        :ponts: zero or more args, each of which is a point or list of points
+        """
+        tracked_items = self.get_point_tracking(*points)
+        for item in tracked_items:
+            item.hide()
+    
+    def get_point_tracking(self, *points):
+        """ Get all tracking connected to points
+        :points: zero or more args, each of which is a point or list of points
+        :returns: list of tracking items associated with these points
+        """
+        for pts in points:
+            if not isinstance(pts, list):
+                pts = [pts]         # Make list of one
+            tracked_items = {}      # Dictionary of tracked items
+            for point in pts:
+                for tracked_item in self.tracked_items:
+                    if isinstance(tracked_item, PointPlace):
+                        pt = tracked_item.point
+                        if pt.point_id == point:
+                            tracked_items[tracked_item.tracking_id] = tracked_item
+                    elif isinstance(tracked_item, PointPlaceTwo):
+                        tpt = tracked_item.point1
+                        if tpt.point_id == point.point_id:
+                            tracked_items[tracked_item.tracking_id] = tracked_item
+                        else:
+                            tpt = tracked_item.point2
+                            if tpt.point_id == point.point_id:
+                                tracked_items[tracked_item.tracking_id] = tracked_item
+        return tracked_items.values()
+    
+    def remove_point_tracking(self, *points):
+        """ Remove all tracking connected to points
+        :points: zero or more args, each of which is a point or list of points
+        """
+        for pts in points:
+            if not isinstance(pts, list):
+                pts = [pts]     # Make list of one
+            for point in pts:
+                kept_tracked = []        # tracked to be kept
+                for tracked_item in self.tracked_items:
+                    is_kept = True          # Cleared if removing tracked_item
+                    if isinstance(tracked_item, PointPlace):
+                        pt = tracked_item.point
+                        if pt.point_id == point:
+                            tracked_item.destroy()
+                            is_kept = False
+                    elif isinstance(tracked_item, PointPlaceTwo):
+                        tpt = tracked_item.point1
+                        if tpt.point_id == point.point_id:
+                            tracked_item.destroy()
+                            is_kept = False
+                        else:
+                            tpt = tracked_item.point2
+                            if tpt.point_id == point.point_id:
+                                tracked_item.destroy()
+                                is_kept = False
+                    if is_kept:
+                        kept_tracked.append(tracked_item)    
+                self.tracked_items = kept_tracked    
+                            
     def show_region_trail_points(self):
         """ Show region trail points
         If no region, show all trail points
@@ -358,7 +627,19 @@ class TrackingControl(SelectControlWindow):
                             unit=self.unit)
         self.tracked_items.append(pp1)
         return True
-        
+
+    def show_trail_points(self):
+        """ Show trail with points visible
+        """
+        if self.trail is not None:
+            self.trail.show_points()
+    
+    def hide_trail_points(self):
+        """ Hide trail points
+        """
+        if self.trail is not None:
+            self.trail.hide_points()
+            
     def track_one_point_chosen(self):
         p1 = self.get_val_from_ctl("single_point.single_point_name")
         if p1 == "":
@@ -390,19 +671,39 @@ class TrackingControl(SelectControlWindow):
         if point2 is None:
             self.report("Second point named {p2} is not on the map")
             return
-        self.track_two_pints(point1, point2)
-        
-    def track_two_points(self, point1, point2):
         self.set_vals()     # Read form
+        connection_line = self.get_val("connection.line", self.connection_line)
+        connection_line_color=self.get_val("line_attributes.color", self.connection_line_color)
+        connection_line_width=self.get_val("line_attributes.width", self.connection_line_width)
+                  
+        self.track_two_pints(point1, point2,
+            color=connection_line_color,
+            width=connection_line_width,
+            line_type=connection_line,
+            display_monitor=True)
+        
+    def track_two_points(self, point1, point2,
+                         color=None, width=None,
+                         line_type=None,
+                         display_monitor=None):
+        """ Track (join) two points might be considered an edge
+        in crs_points
+        :point1: first point
+        :point2: second point
+        :color: color of connecting line
+        :line_type: type of connection line
+        :width: with of line in pixels
+        :display_monitor: show connection attributes in monitor
+            default: display
+        """
         p1 = point1.label
         p2 = point2.label
-        SlTrace.lg(f"track_two_points: {p1}-{p2}")
+        SlTrace.lg(f"track_two_points: {p1}-{p2}", "tracking")
         pp2 = PointPlaceTwo(self.mgr.sc, title=f"Tracking:{p1}-{p2}", point1=point1, point2=point2,
-                            connection_line=self.get_val("connection.line", self.connection_line),
-                            connection_line_color=self.get_val("line_attributes.color",
-                                                                self.connection_line_color),
-                            connection_line_width=self.get_val("line_attributes.width",
-                                                               self.connection_line_width),
+                            connection_line=line_type,
+                            connection_line_color=color,
+                            connection_line_width=width,
+                            display_monitor=display_monitor,
                             unit=self.unit)
         self.tracked_items.append(pp2)
         

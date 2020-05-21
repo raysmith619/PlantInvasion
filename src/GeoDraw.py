@@ -1,19 +1,17 @@
 """
 Interface to Pillow Image facilitating map annotation 
 """
-import re
 import os
 from PIL import Image, ImageDraw, ImageFont
-import urllib.request, urllib.parse, urllib.error, io
-from math import log, cos, sin, exp, sqrt, tan, asin, atan, atan2, pi, ceil
+from math import cos, sin, sqrt, asin, atan2, pi, ceil
 from GMIError import GMIError
 from builtins import staticmethod
-from openpyxl.drawing.effect import Color
-from idlelib.colorizer import color_config
-from pandas._libs.tslibs.offsets import get_firstbday
+###from openpyxl.drawing.effect import Color
+###from idlelib.colorizer import color_config
+###from pandas._libs.tslibs.offsets import get_firstbday
 
 from select_trace import SlTrace
-from gpx_file import GPXFile
+from survey_trail import SurveyTrail
 
 EARTH_RADIUS = 6378137.
 EQUATOR_CIRCUMFERENCE = 2 * pi * EARTH_RADIUS
@@ -481,10 +479,10 @@ class GeoDraw:
         self.text("North", xY=label_pt, font=north_label_font, fill=arrow_color)
 
 
-    def addTrail(self, gpx_in, title=None, color_code=False,color="orange",
+    def addTrail(self, trail_in, title=None, color_code=False,color="orange",
                  keep_outside=True):
         """
-        :gpx_in: trail raw info (GPXFile)
+        :trail_in: trail input trail info
         :title: title (may be point file full path)
         :color: trail color
         :color_code: color code longer point distances
@@ -499,8 +497,8 @@ class GeoDraw:
             self.addTitle(self.title, xY=title_xy)
         self.trail_width = 2.       # Trail width in meters
         self.max_dist_allowed = 150.
-        gpx = self.cleanTrail(gpx_in, keep_outside=keep_outside)
-        for track in gpx.get_segments():
+        trail = self.cleanTrail(trail_in, keep_outside=keep_outside)
+        for track in trail.get_segments():
             points = track.get_points()
             if color_code:
                 return self.addTrail_color_code(points)
@@ -623,19 +621,19 @@ class GeoDraw:
         self.lineSeg(latLong=(p1.lat,p1.long), latLong2=(p2.lat,p2.long), width=int(line_width),
                      fill=color)
 
-    def cleanTrail(self, gpx_in, keep_outside=True):
+    def cleanTrail(self, trail_in, keep_outside=True):
         """ Adjust initial points to most likely to be valid measurements
             Assemble trail stats
             1. Throw any points outside border
-            :gpx_in: raw trail info (GPXFile)
+            :trail_in: raw trail info (SurveyTrail)
             :keep_outside: Keep points even if outside region
                 or further back than self.max_dist_allowed
                 False: skip points outside region
                 default: keep
         """
-        return gpx_in           # TFD no changes
-    
-        gpx = GPXFile()
+        return trail_in  # For now - no changes
+        '''
+        trail = SurveyTrail()
         n_diff = 0              # Number of distances (n good pts - 1)
         n_outside = 0
         dist_sum = 0.
@@ -688,8 +686,9 @@ class GeoDraw:
             SlTrace.lg(f"minimum distance: {min_dist:.1f}m maximum distance: {max_dist:.1f}m average: {avg_dist:.2f}m")
             SlTrace.lg(f"Total path distance: {dist_sum:.1f}m") 
 
-        return gpx
-        
+        return trail
+        '''
+   
     def addScale(self,
                 xY=None, pos=None, latLong=None,
                 xYEnd=None, posEnd=None, latLongEnd=None,
@@ -1093,8 +1092,10 @@ class GeoDraw:
         long = latLong[1]
         lat_offset = lat - self.ulLat         # from upper left corner - - increase down
         long_offset = long - self.ulLong      # increase left to right
-        mx = long_offset/(self.lrLong-self.ulLong)*self.getWidth()      # increase left to right
-        my = lat_offset/(self.lrLat-self.ulLat)*self.getHeight()        # increase ulLat: upper(less) to lrLat: lower(bigger)
+        diff_long = (self.lrLong-self.ulLong)    # increase left to right
+        mx = long_offset/diff_long*self.getWidth() if diff_long != 0. else 0.
+        diff_lat = (self.lrLat-self.ulLat)         # increase ulLat: upper(less) to lrLat: lower(bigger)
+        my = lat_offset/diff_lat*self.getHeight() if diff_lat != 0. else 0.
         if self.mapRotate is not None:
             mapTheta = -deg2rad(self.mapRotate)
             # Translate to center of image

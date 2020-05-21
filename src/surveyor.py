@@ -18,7 +18,9 @@ Created on October 30, 2018
 @author: Charles Raymond Smith
 """
 import os
-from tkinter import *    
+import sys
+import re
+from tkinter import filedialog,Tk, mainloop    
 ###from tkinter.filedialog import askopenfilename
 import argparse
 
@@ -30,16 +32,13 @@ from sample_file import SampleFile
 mw = Tk()       # MUST preceed users of SelectControl for tkinter vars ...Var()
                 # e.g. SelectPlay -> ScoreWindow -> SelectControl
 from crs_funs import str2bool
-from select_error import SelectError
 from select_trace import SlTrace
 
 from select_control import SelectControl
 from select_window import SelectWindow
 from GoogleMapImage import GoogleMapImage
 from scrolled_canvas import ScrolledCanvas
-from tracking_control import TrackingControl
 from mapping_control import MappingControl
-from gpx_file import GPXFile
 
 def pgm_exit():
     SlTrace.lg("Properties File: %s"% SlTrace.getPropPath())
@@ -68,8 +67,9 @@ address = None
 test_address = "24 Chapman St., Watertown, MA, US"
 map_file = None
 test_map_file = '../out/gmi_ulA42_376371_O-71_187576_lRA42_369949_O-71_181274_640x640_sc1z19_h_mr45_AUG.png'
-test_map_file = r"C:\Users\raysm\workspace\python\PlantInvasion\out\gmi_ulA42_376000_O-71_177315_lRA42_375640_O-71_176507_640x640_sc1z22_h.png"
-test_map_info = r"C:\Users\raysm\workspace\python\PlantInvasion\out\gmi_ulA42_376000_O-71_177315_lRA42_375640_O-71_176507_640x640_sc1z22_h_png.imageinfo" 
+test_map_file = "C:/Users/raysm/workspace/python/PlantInvasion/out/gmi_ulA42_376000_O-71_177315_lRA42_375640_O-71_176507_640x640_sc1z22_h.png"
+test_map_info = "C:/Users/raysm/workspace/python/PlantInvasion/out/gmi_ulA42_376000_O-71_177315_lRA42_375640_O-71_176507_640x640_sc1z22_h_png.imageinfo" 
+trailfile = "C:/Users/raysm/workspace/python/PlantInvasion/new_data/trails_from_averaged_waypoints_CORRECTED_9nov2018_adj_20may2020.gpx"
 infoFile = None
 
 '''
@@ -91,6 +91,7 @@ parser.add_argument('--profile_running', type=str2bool, dest='profile_running', 
 parser.add_argument('-s', '--show_ll', dest='show_samples_lat_lon',
                       default=show_samples_lat_lon)
 parser.add_argument('--trace', dest='trace', default=trace)
+parser.add_argument('--trailfile', dest='trailfile', default=trailfile)
 parser.add_argument('--undo_len', type=int, dest='undo_len', default=undo_len)
 parser.add_argument('-w', '--width=', type=int, dest='width', default=width)
 parser.add_argument('-e', '--height=', type=int, dest='height', default=height)
@@ -110,6 +111,7 @@ height = args.height
 map_file = args.map_file
 if map_file == "TEST":
     map_file = test_map_file      # Use test file
+trailfile = args.trailfile
 infoFile = args.infoFile
 width = args.width
 height = args.height
@@ -139,10 +141,11 @@ def map_place():
     """
     SlTrace.report("image_file - TBD")
     
-def adjust_view():
-    """ Adjust view
+def save_trail_file():
+    """ Save Trail (GPX) File
     """
-    SlTrace.report("Adjust View - TBD")
+    if pt_mgr is not None:
+        pt_mgr.save_trail_file()
 
 gmi = None
 sc = None
@@ -198,12 +201,31 @@ def add_sample_file():
     if pt_mgr is not None:
         pt_mgr.add_point_list(spx, name="samples", title=samplefile)
 
-trailfile = "trails_from_averaged_waypoints_CORRECTED_9nov2018"
 def add_trail_file():
     """ add trail file to display
     """
+    global trailfile
+    
     if pt_mgr is not None:
-        pt_mgr.add_trail_file(trailfile)
+        if pt_mgr.get_gmi() is None:
+            return
+        
+    if trailfile is None or trailfile == "ASK":
+        trailfile = filedialog.askopenfilename(
+            initialdir= "../data",
+            title = "Add Trail File",
+            filetypes= (("Trail files", "*.gpx"),
+                        ("all files", "*.*"))
+                       )
+    if trailfile is None:
+        SlTrace.report(f"No file selected")
+        sys.exit(1)
+        
+    if not os.path.exists(trailfile):
+        SlTrace.report(f"File {trailfile} not found")
+        sys.exit(1)
+            
+    pt_mgr.add_trail_file(trailfile)
 
 def map_region():
     if pt_mgr is not None:
@@ -276,7 +298,7 @@ def do_address(address):
 
 app.add_menu_command("Map Some Place", map_someplace)
 app.add_menu_separator()
-app.add_menu_command("Adjust View", adjust_view)
+app.add_menu_command("Save Trail File", save_trail_file)
 app.add_menu_command("Track Points", track_points)
 app.add_menu_command("Add Trail File", add_trail_file)
 app.add_menu_command("Add Sample File", add_sample_file)

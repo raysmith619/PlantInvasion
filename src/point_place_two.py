@@ -9,6 +9,8 @@ from math import sqrt
 from canvas_coords import CanvasCoords
 
 class PointPlaceTwo(Toplevel):
+    ID_PREFIX = "PP_"       # Unique tracking type prefix
+    id_no = 0               # id no for this tracking type
     # Display point position annotation
     SHOW_POINT_NONE = 1
     SHOW_POINT_LL = 2
@@ -92,9 +94,10 @@ class PointPlaceTwo(Toplevel):
                  connection_line=CONNECTION_LINE_LINE,
                  connection_line_width=2,
                  connection_line_color="red",
+                 visible=True,
+                 display_monitor=True,
+                 show_points=True,
                  ):
-        
-        
         """
         :sc: scrollable canvas Must contain sc.gmi GoogleMapImage 
         :parent: - parent - call basis must have tc_destroy to be called if we close
@@ -103,8 +106,40 @@ class PointPlaceTwo(Toplevel):
         :size: form size (width, hight) in in pixels of window
         :lat_long: optional starting point latitude, longitude
         :track_sc: Update, based on mouse motion, till Add Point clicked
+        :color: color of connecting line
+        :connection_line_type: type of connection line
+        :connection_line_width: with of line in pixels
+        :display_monitor: show connection attributes in monitor
+            default: display
+        :show_points: display end points
+        :visible: connection is currently visible
+                default: True - visible
         :unit" - linear unit default: "m"
         """
+        self.mw = None
+        PointPlaceTwo.id_no += 1
+        self.tracking_id = f"{PointPlaceTwo.ID_PREFIX}{PointPlaceTwo.id_no}"
+        self.sc = sc
+        self.visible = visible
+        if sc is not None:
+            self.gmi = sc.gmi
+            self.ref_latLong = self.gmi.get_ref_latLong() 
+        else:
+            self.gmi = None
+            self.ref_latLong = None
+             
+        self.parent = parent
+        self.title = title
+        self.position = position
+        self.size = size
+        self.lat_long = lat_long
+        self.point1 = point1
+        self.point2= point2
+        self.connection_line = connection_line
+        self.connection_line_width = connection_line_width
+        self.connection_line_color = connection_line_color
+        self.display_monitor = display_monitor
+        self.show_points = show_points
         self.mt_width = 10              # meter form entry width (char)
         self.px_width = 6               # pixel form entry width (char)
         self.ll_width = 11              # long/lat form entry width (char)
@@ -122,29 +157,39 @@ class PointPlaceTwo(Toplevel):
         self.standalone = False
         self.motion_update2 = None     # Used if sc already has a motion call
         self.unit = unit
-        self.connection_line = connection_line
         self.connection_line_tag = None # Connection line tag(s), if any
         self.connection_line_width=connection_line_width
         self.connection_line_color=connection_line_color
+        self.display_monitor = display_monitor
         
-        if parent is None:
+        if self.point1 is not None and self.point2 is not None:
+            self.set_ctl_val("point1_name", self.point1.label)
+            self.point1.add_tracker(self.point1_moved)
+            self.set_ctl_val("point2_name", self.point2.label)
+            self.point2.add_tracker(self.point2_moved)
+            self.point1_moved(point1)               # Force first listing
+        elif self.lat_long is not None:
+            self.set_lat_long(lat_long)
+        elif self.gmi is not None:
+            lat_long = self.gmi.getCenter()
+            self.set_lat_long(lat_long) 
+        
+        if display_monitor:
+            self.setup_display_monitor()
+    
+    def setup_display_monitor(self):
+        if self.parent is None:
             parent = Tk()
             ###parent.withdraw()
             self.standalone = True
         self.mw = parent
         ###super().__init__(parent)
-        self.sc = sc
-        if sc is not None:
-            self.gmi = sc.gmi
-            self.ref_latLong = self.gmi.get_ref_latLong() 
-        else:
-            self.gmi = None
         top_frame = Frame(self.mw)
         top_frame.grid()
         ctl_frame = top_frame
         self.top_frame = top_frame
-        if title is not None:
-            title_label = Label(master=self.top_frame, text=title, font="bold")
+        if self.title is not None:
+            title_label = Label(master=self.top_frame, text=self.title, font="bold")
             title_label.grid(row=PointPlaceTwo.ROW_TITLE, column=PointPlaceTwo.COL_TITLE, columnspan=3)
         Label(master=ctl_frame, text="Distance").grid(row=PointPlaceTwo.ROW_HEADING, column=PointPlaceTwo.COL_HEADING_DIST)    
         field = "latitude"
@@ -253,19 +298,6 @@ class PointPlaceTwo(Toplevel):
         self.ctls_vars[field] = content = StringVar()
         self.ctls_ctls[field] = button = Button(ctl_frame, text="Add Point")
         button.grid(row=PointPlaceTwo.ROW_ADD_POINT, column=PointPlaceTwo.COL_ADD_POINT)
-        self.point1 = point1
-        self.point2 = point2
-        if point1 is not None and point2 is not None:
-            self.set_ctl_val("point1_name", self.point1.label)
-            point1.add_tracker(self.point1_moved)
-            self.set_ctl_val("point2_name", self.point2.label)
-            point2.add_tracker(self.point2_moved)
-            self.point1_moved(point1)               # Force first listing
-        elif lat_long is not None:
-            self.set_lat_long(lat_long)
-        elif self.gmi is not None:
-            lat_long = self.gmi.getCenter()
-            self.set_lat_long(lat_long) 
         self.mw.protocol("WM_DELETE_WINDOW", self.delete_window)
         
         if self.track_sc:
@@ -284,56 +316,57 @@ class PointPlaceTwo(Toplevel):
     def update_point2_minus_p1(self):   
         """ Update differences between 2 and 1
         """
-        p1 = self.point1 
-        p1c = CanvasCoords(self.sc, lat=p1.lat, long=p1.long, unit=self.unit)
-        p2 = self.point2         
-        p2c = CanvasCoords(self.sc, lat=p2.lat, long=p2.long, unit=self.unit)
-        
-        latitude_dist = p2c.lat - p1c.lat
-        self.set_ctl_val("latitude", latitude_dist, fmt=self.ll_fmt)
-        
-        longitude_dist = p2c.long - p1c.long
-        self.set_ctl_val("longitude", longitude_dist, fmt=self.ll_fmt)
-        
-        ll_dist = sqrt(latitude_dist**2
-                           + longitude_dist**2)
-        self.set_ctl_val("ll_dist", ll_dist, fmt=self.ll_fmt)
-        
-        x_dist = p2c.x_dist - p1c.x_dist
-        self.set_ctl_label("x_dist", f"x({self.unit})")
-        self.set_ctl_val("x_dist", x_dist, fmt=self.dis_fmt)
-        
-        y_dist = p2c.y_dist - p1c.y_dist
-        self.set_ctl_label("y_dist", f"y({self.unit})")
-        self.set_ctl_val("y_dist", y_dist, fmt=self.dis_fmt)
-        
-        linear_dist = sqrt((p2c.x_dist-p1c.x_dist)**2
-                           +(p2c.y_dist-p1c.y_dist)**2)
-        self.set_ctl_val("linear_dist", linear_dist, fmt=self.dis_fmt)
-        
-        x_image = p2c.x_image - p1c.x_image
-        self.set_ctl_label("x_image", f"x({self.unit})")
-        self.set_ctl_val("x_image", x_image, fmt=self.px_fmt)
-        
-        y_image = p2c.y_image - p1c.y_image
-        self.set_ctl_label("y_image", f"y({self.unit})")
-        self.set_ctl_val("y_image", y_image, fmt=self.px_fmt)
-        
-        image_dist = sqrt((p2c.canvas_x-p1c.canvas_x)**2
-                           +(p2c.canvas_y-p1c.canvas_y)**2)
-        self.set_ctl_val("image_dist", image_dist, fmt=self.px_fmt)
-        
-        canvas_x = p2c.canvas_x - p1c.canvas_x
-        self.set_ctl_label("canvas_x", f"x({self.unit})")
-        self.set_ctl_val("canvas_x", canvas_x, fmt=self.px_fmt)
-        
-        canvas_y = p2c.canvas_y - p1c.canvas_y
-        self.set_ctl_label("canvas_y", f"y({self.unit})")
-        self.set_ctl_val("canvas_y", canvas_y, fmt=self.px_fmt)
-        
-        canvas_dist = sqrt((p2c.canvas_x-p1c.canvas_x)**2
-                           +(p2c.canvas_y-p1c.canvas_y)**2)
-        self.set_ctl_val("canvas_dist", canvas_dist, fmt=self.px_fmt)
+        if self.display_monitor:
+            p1 = self.point1 
+            p1c = CanvasCoords(self.sc, lat=p1.lat, long=p1.long, unit=self.unit)
+            p2 = self.point2         
+            p2c = CanvasCoords(self.sc, lat=p2.lat, long=p2.long, unit=self.unit)
+            
+            latitude_dist = p2c.lat - p1c.lat
+            self.set_ctl_val("latitude", latitude_dist, fmt=self.ll_fmt)
+            
+            longitude_dist = p2c.long - p1c.long
+            self.set_ctl_val("longitude", longitude_dist, fmt=self.ll_fmt)
+            
+            ll_dist = sqrt(latitude_dist**2
+                               + longitude_dist**2)
+            self.set_ctl_val("ll_dist", ll_dist, fmt=self.ll_fmt)
+            
+            x_dist = p2c.x_dist - p1c.x_dist
+            self.set_ctl_label("x_dist", f"x({self.unit})")
+            self.set_ctl_val("x_dist", x_dist, fmt=self.dis_fmt)
+            
+            y_dist = p2c.y_dist - p1c.y_dist
+            self.set_ctl_label("y_dist", f"y({self.unit})")
+            self.set_ctl_val("y_dist", y_dist, fmt=self.dis_fmt)
+            
+            linear_dist = sqrt((p2c.x_dist-p1c.x_dist)**2
+                               +(p2c.y_dist-p1c.y_dist)**2)
+            self.set_ctl_val("linear_dist", linear_dist, fmt=self.dis_fmt)
+            
+            x_image = p2c.x_image - p1c.x_image
+            self.set_ctl_label("x_image", f"x({self.unit})")
+            self.set_ctl_val("x_image", x_image, fmt=self.px_fmt)
+            
+            y_image = p2c.y_image - p1c.y_image
+            self.set_ctl_label("y_image", f"y({self.unit})")
+            self.set_ctl_val("y_image", y_image, fmt=self.px_fmt)
+            
+            image_dist = sqrt((p2c.canvas_x-p1c.canvas_x)**2
+                               +(p2c.canvas_y-p1c.canvas_y)**2)
+            self.set_ctl_val("image_dist", image_dist, fmt=self.px_fmt)
+            
+            canvas_x = p2c.canvas_x - p1c.canvas_x
+            self.set_ctl_label("canvas_x", f"x({self.unit})")
+            self.set_ctl_val("canvas_x", canvas_x, fmt=self.px_fmt)
+            
+            canvas_y = p2c.canvas_y - p1c.canvas_y
+            self.set_ctl_label("canvas_y", f"y({self.unit})")
+            self.set_ctl_val("canvas_y", canvas_y, fmt=self.px_fmt)
+            
+            canvas_dist = sqrt((p2c.canvas_x-p1c.canvas_x)**2
+                               +(p2c.canvas_y-p1c.canvas_y)**2)
+            self.set_ctl_val("canvas_dist", canvas_dist, fmt=self.px_fmt)
         self.update_connection() 
 
     def redisplay(self):
@@ -347,6 +380,8 @@ class PointPlaceTwo(Toplevel):
             canvas.delete(self.connection_line_tag)
             self.connection_line_tag = None
             
+        if not self.visible:
+            return
         
         p1 = self.point1 
         p1c = CanvasCoords(self.sc, lat=p1.lat, long=p1.long, unit=self.unit)
@@ -362,6 +397,9 @@ class PointPlaceTwo(Toplevel):
                 width=self.connection_line_width)
         elif self.connection_line == PointPlaceTwo.CONNECTION_LINE_IBAR:
             pass
+        if self.show_points:
+            p1.display()        # Redisplay points
+            p2.display()
                 
     def delete_window(self):
         """ Delete window
@@ -374,14 +412,20 @@ class PointPlaceTwo(Toplevel):
         self.mw = None
 
     def hide(self):
-        """ Hide form
+        """ Hide connection and form
         """
-        self.mw.withdraw()
+        if self.mw is not None:
+            self.mw.withdraw()
+        self.visible = False
+        self.redisplay()
 
     def show(self):
         """  Show form
         """
-        self.mw.deiconify()
+        if self.mw is not None:
+            self.mw.deiconify()
+        self.visible = True
+        self.redisplay()
         
         
     def motion_update(self, x_pixel, y_pixel):
@@ -446,8 +490,9 @@ class PointPlaceTwo(Toplevel):
         :x_pixel: canvas x location
         :y_pixel: canvas y location
         """
-        self.set_ctl_val("canvas_x_pixel", x_pixel, ".0f")
-        self.set_ctl_val("canvas_y_pixel", y_pixel, ".0f")
+        if self.display_monitor:
+            self.set_ctl_val("canvas_x_pixel", x_pixel, ".0f")
+            self.set_ctl_val("canvas_y_pixel", y_pixel, ".0f")
         x_image, y_image = self.canvas2image(x_pixel, y_pixel)
         lat_long = self.gmi.pixelToLatLong((x_image, y_image))
         self.set_lat_long(lat_long)
@@ -456,6 +501,9 @@ class PointPlaceTwo(Toplevel):
         """ Set value
         """
         setattr(self, field, val)               # Set internal value
+        if not self.display_monitor:
+            return
+        
         ctl_var = self.ctls_vars[field]         # Not updating the display
         if hasattr(self, "lat"):
             ctl_var.set(str(self.lat))          # Not updating the display
@@ -467,6 +515,9 @@ class PointPlaceTwo(Toplevel):
     def set_ctl_label(self, field, label):
         """ Set field's associated label, if one
         """
+        if not self.display_monitor:
+            return
+        
         if field in self.ctls_labels:
             ctl_label = self.ctls_labels[field]
             ctl_label.config(text=label)
@@ -477,15 +528,17 @@ class PointPlaceTwo(Toplevel):
         """
         self.lat = lat_long[0]
         self.long = lat_long[1]
-        self.set_ctl_val("latitude", lat_long[0], self.ll_fmt)
-        self.set_ctl_val("longitude", lat_long[1], self.ll_fmt)
+        if self.display_monitor:
+            self.set_ctl_val("latitude", lat_long[0], self.ll_fmt)
+            self.set_ctl_val("longitude", lat_long[1], self.ll_fmt)
         if self.gmi is not None:
             x_dist, y_dist = self.gmi.getPos(latLong=lat_long, unit=self.unit, ref_latLong=self.ref_latLong)
-            self.set_ctl_val("x_dist", x_dist, self.dis_fmt)
-            self.set_ctl_val("y_dist", y_dist, self.dis_fmt)
-            x_pixel, y_pixel = self.gmi.getXY(latLong=lat_long)
-            self.set_ctl_val("x_pixel", x_pixel, self.px_fmt)
-            self.set_ctl_val("y_pixel", y_pixel, self.px_fmt)
+            if self.display_monitor:
+                self.set_ctl_val("x_dist", x_dist, self.dis_fmt)
+                self.set_ctl_val("y_dist", y_dist, self.dis_fmt)
+                x_pixel, y_pixel = self.gmi.getXY(latLong=lat_long)
+                self.set_ctl_val("x_pixel", x_pixel, self.px_fmt)
+                self.set_ctl_val("y_pixel", y_pixel, self.px_fmt)
 
     def update(self):
         if  self.mw is not None:
@@ -504,8 +557,9 @@ class PointPlaceTwo(Toplevel):
         :unit:  unit measure
         """
         self.unit = unit
-        self.set_ctl_label("x_dist", f"x({unit})")
-        self.set_ctl_label("y_dist", f"y({unit})")
+        if self.display_monitor:
+            self.set_ctl_label("x_dist", f"x({unit})")
+            self.set_ctl_label("y_dist", f"y({unit})")
         self.update_point2_minus_p1()
     
     def destroy(self):
@@ -522,23 +576,40 @@ class PointPlaceTwo(Toplevel):
             self.mw = None
             
 if __name__ == "__main__":
+    from select_trace import SlTrace
+    
     from GoogleMapImage import GoogleMapImage
     from scrolled_canvas import ScrolledCanvas
     from point_place import PointPlace
     from survey_point_manager import SurveyPointManager
-    
+    from survey_point import SurveyPoint
     ulLat = 42.3760002
     ulLong = -71.1773149
     width = 1200
     height = 1000
-    zoom=22
-    lat_long = (ulLat, ulLong)
-    gmi = GoogleMapImage(ulLat=ulLat, ulLong=ulLong, xDim=40, zoom=zoom)
-    gmi.saveAugmented()
-    sc = ScrolledCanvas(gmi=gmi, width=width, height=height)
-
-    pp = PointPlace(sc=sc, title="Scrolled Canvas Tracking", lat_long=lat_long, track_sc=True)
-    pp2 = PointPlaceTwo(title="Two Point Tracking")
-    pt_mgr = SurveyPointManager(sc)
-
-    mainloop()
+    no_display = True
+    if no_display:
+        zoom=18
+        lat_long = (ulLat, ulLong)
+        gmi = GoogleMapImage(ulLat=ulLat, ulLong=ulLong, xDim=40, zoom=zoom)
+        gmi.saveAugmented()
+        sc = ScrolledCanvas(gmi=gmi, width=width, height=height)
+        pt_mgr = sc.get_pt_mgr()
+        p1 = SurveyPoint(pt_mgr, lat=ulLat, long=ulLong)
+        p2_lat, p2_long = gmi.addToPointLL(latLong=(p1.lat, p1.long), leng=20, deg=0.)
+        p2 = SurveyPoint(pt_mgr, lat=p2_lat, long=p2_long)
+        pp2_no_dis = PointPlaceTwo(sc, p1, p2, display_monitor=False)
+        SlTrace.lg("After no display tracking")
+        mainloop()
+    else:        
+        zoom=20
+        lat_long = (ulLat, ulLong)
+        gmi = GoogleMapImage(ulLat=ulLat, ulLong=ulLong, xDim=40, zoom=zoom)
+        gmi.saveAugmented()
+        sc = ScrolledCanvas(gmi=gmi, width=width, height=height)
+    
+        pp = PointPlace(sc=sc, title="Scrolled Canvas Tracking", lat_long=lat_long, track_sc=True)
+        pp2 = PointPlaceTwo(title="Two Point Tracking")
+        pp2_no_dis = PointPlaceTwo(lat_long=lat_long, track_sc=True)
+        pt_mgr = SurveyPointManager(sc)
+        mainloop()

@@ -8,13 +8,15 @@ import re
 import datetime
 import openpyxl
 import argparse
+from tkinter import filedialog
 from PIL import Image, ImageDraw, ImageFont
 
 from select_trace import SlTrace
 from GoogleMapImage import GoogleMapImage, geoDistance
-from scrolled_canvas import ScrolledCanvas 
-from gpx_file import GPXFile
-from sample_file import SampleFile, SamplePoint
+from scrolled_canvas import ScrolledCanvas
+from survey_point_manager import SurveyPointManager 
+from survey_trail import SurveyTrail
+from sample_file import SamplePoint
 
 def report(msg):
     """ Defaut popup report
@@ -318,6 +320,14 @@ if football_sideline:
 ###gmi.show()
 
 if showtrail:
+    if trailfile == "ASK":
+        trailfile = filedialog.askopenfilename(
+            initialdir= "../new_data",
+            title = "Trail Files",
+            filetypes= (("trail files", "*.png"),
+                         ("all files", "*.*"))
+                       )
+        
     SlTrace.lg(f"Showing trail from file {trailfile}")
     ts= SlTrace.getTs(dp=0)
     pre_trail = f"pre_trail_{ts}.png"
@@ -334,11 +344,13 @@ if showtrail:
         report(f"File {trailfile} not found")
         sys.exit(1)
     else:
-        gpx = GPXFile(trailfile)
-        gmi.addTrail(points=gpx.get_points(), title=trailfile)
+        aug_name = gmi.saveAugmented()
+        sc = ScrolledCanvas(gmi=gmi)
+        pt_mgr = SurveyPointManager(sc, track_sc=False)
+        trail = SurveyTrail(pt_mgr, file_name=trailfile)
+        gmi.addTrail(trail, title=trailfile)
         aug_name = gmi.saveAugmented()
         SlTrace.lg(f"aug_name: {aug_name}")
-        sc = ScrolledCanvas(fileName=aug_name)
 else:
     aug_name = gmi.saveAugmented()
     sc = ScrolledCanvas(fileName=aug_name)

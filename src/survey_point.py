@@ -4,7 +4,7 @@ Handling point display aspect for points in SurveyPointManager
 """
 from select_trace import SelectError
 from canvas_coords import CanvasCoords
-from wx.lib.plot.utils import DisplaySide
+
 class SurveyPoint:
     """ Point objects used for doing surveying type operations
     .e.g. distance, direction, area, circumferance measurements
@@ -18,6 +18,9 @@ class SurveyPoint:
             
     def __init__(self, mgr, lat=None, long=None,
                  label=None, label_size=None,
+                 label_displayed = True,
+                 show_item=None,
+                 displayed=True,
                  display_size=None, select_size=None,
                  point_type=None,
                  center_color=None, color=None,
@@ -26,8 +29,15 @@ class SurveyPoint:
         :lat: latitude        # To insulate against scaling/shifting
         :long: longitude
         :label: Point label (str) Point label prefix e.f. P1, P2,...
-                must be CASE INSENSITIVE unique
         :label_size: Point label vertical size in pixels
+                must be CASE INSENSITIVE unique
+        :label_displayed: label is displayed if the point is displayed
+                default: True - displayed
+        :show_item: unique display item for selection lists
+                default: label: lat=... long=...
+         :displayed: display point if present, else don't display point
+                default: display
+                    
         :display_size: point display circle size in pixels
                     default: 10
         :select_size: point selection circle size 
@@ -50,6 +60,11 @@ class SurveyPoint:
             label = f"{mgr.label}{self.mgr.label_no}" 
             self.mgr.label_no += 1
         self.label = label
+        self.label_displayed = label_displayed
+        self.displayed = displayed
+        if show_item is None:
+            show_item = f"{label}:  lat={lat} long={long}"
+        self.show_item = show_item
         if lat is None:
             raise SelectError(f"SurveyPoing {label} lat is missing")
         
@@ -110,10 +125,16 @@ class SurveyPoint:
     def destroy(self):
         self.delete()
                     
-    def display(self):
+    def display(self, displayed=None, color=None):
         """ Display point + label
         Adjusting / deleting / replacing canvas tags as appropriate
+        :displayed: changing displayed, if present
+        :color: changing color if present
         """
+        if displayed is not None:
+            self.displayed = displayed  # Update point, to make redisplay keep color
+        if color is not None:
+            self.color = color
         self.display_point()
         self.display_label()
 
@@ -137,6 +158,9 @@ class SurveyPoint:
         if self.center_tag is not None:
             canvas.delete(self.center_tag)
             self.center_tag = None
+        if not self.displayed:          # Do after in case state changed
+            return
+        
         pc = self.get_canvas_coords()
         if self.point_type == SurveyPoint.POINT_TYPE_CIRCLE:
             w = h = self.display_size
@@ -150,7 +174,8 @@ class SurveyPoint:
             y1 = y0 + h 
             self.point_tag = canvas.create_oval(x0, y0, x1, y1, fill=self.color)
             self.center_tag = canvas.create_oval(x-1, y-1, x+1, y+1, fill=self.center_color)
-            
+        elif self.point_type == SurveyPoint.POINT_TYPE_NONE:
+            pass    
 
     def get_canvas_coords(self, **kwargs):
         """ Shorthand to get CanvasCoords
@@ -171,8 +196,8 @@ class SurveyPoint:
         if self.label_tag is not None:
             canvas.delete(self.label_tag)
             self.label_tag = None
-        if self.label == "":
-            return              # No label
+        if not self.displayed or not self.label_displayed:        # Do here, in case state changed
+            return
         
         text = self.label
         char_size = self.label_size

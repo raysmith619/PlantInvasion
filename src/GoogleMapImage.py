@@ -903,24 +903,33 @@ class GoogleMapImage:
             unit = self.unit
         return geoUnitLen(unit)     # Use global function so we don't depend on GeoDraw
 
-    def xMeterToPixel(self, dist):
+
+    
+    def meterToPixel(self, meter):
+        """
+        meter to pixel assumes symetric conversion
+        we take average here
+        """
+        
+        return self.geoDraw.meterToPixel(meter)
+
+
+    def xMeterToPixel(self, meter):
         """
         Convert distance, in meters, to pixels
         Assumes latitude change over image is a fraction of circumferance
         
         """
-        pix = dist/self.xPixSize() * float(self.image.width)
-        return pix
+        return self.geoDraw.xMeterToPixel(meter)
 
 
-    def yMeterToPixel(self, dist):
+    def yMeterToPixel(self, meter):
         """
         Convert distance, in meters, to pixels
         Assumes latitude change over image is a fraction of circumferance
         
         """
-        pix = dist/self.yPixSize() * float(self.image.height)
-        return pix
+        return self.geoDraw.xMeterToPixel(meter)
 
 
     def latSize(self):
@@ -1091,7 +1100,7 @@ class GoogleMapImage:
 
     def addSamples(self, points, title=None, color=None,
                    show_LL=True):
-        """ Add trail, given ll points
+        """ Add Sample points, given ll points
         First try just add line segments connecting thepoints
         :points: sample points (SamplePoint)
         :title: title (may be point file full path)
@@ -1101,11 +1110,11 @@ class GoogleMapImage:
         return self.geoDraw.addSamples(points=points, title=title,
                                        color=color, show_LL=show_LL)
 
-    def addTrail(self, gpx, title=None,
+    def addTrail(self, trail, title=None,
                  color_code=False,color="orange",
                  keep_outside=True):
         """
-        :gpx: GPXFile trail info, tracks...
+        :trail: trail info (SurveyTrail), tracks...
         :title: title (may be point file full path)
         :color: trail color
         :color_code: color code longer point distances
@@ -1113,7 +1122,7 @@ class GoogleMapImage:
                 False: skip points outside region
                 default: keep
         """
-        return self.geoDraw.addTrail(gpx, title=title,
+        return self.geoDraw.addTrail(trail, title=title,
                             color_code=color_code,
                             color=color,
                             keep_outside=keep_outside)
