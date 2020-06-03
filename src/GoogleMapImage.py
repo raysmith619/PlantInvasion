@@ -17,10 +17,9 @@ import urllib.request, urllib.parse, urllib.error, io
 from select_trace import SlTrace
 from select_error import SelectError
 
-from GeoDraw import GeoDraw, geoDistance, geoMove, gDistance, geoUnitLen
-from GMIError import GMIError
+from GeoDraw import GeoDraw, geoDistance, geoMove, gDistance, geoUnitLen, minMaxLatLong
+from select_error import SelectError
 from APIkey import APIKey
-from graphviz.files import File
 
 
 ###from msilib.schema import File
@@ -79,18 +78,18 @@ def LoadImageFile(mapFileName=None, imageName=None, infoName=None):
     
     If only imageName or infoName specifications, infer the other,
     
-    If no file specification is present raise GMIError
+    If no file specification is present raise SelectError
     
     If either file type is not found return null in its place.
     :mapFileName - file name - infer type of file, the check
                  for other type file
     :imageName - image file name if present, else infer from info
     :infoName - info file name if present, else infer from image
-    If neither is present, raise GMIError
+    If neither is present, raise SelectError
     """
     if mapFileName is not None:
         if infoName is not None or imageName is not None:
-            raise GMIError("Can't include infoName or imageName with mapFileName")
+            raise SelectError("Can't include infoName or imageName with mapFileName")
         if IsInfoName(mapFileName):
             imageName = MakeImageFromInfoName(mapFileName)
             infoName = mapFileName
@@ -175,7 +174,7 @@ def LoadImageInfo(infoName):
                             value_str = "0"
                         value = int(value_str)
                     else:
-                        raise GMIError("Unsupported type for image info%s" % infoName)
+                        raise SelectError("Unsupported type for image info%s" % infoName)
                     info[name] = value 
                 
     except IOError as e:
@@ -219,11 +218,11 @@ def MakeInfoName(imageName):
     imageName
     """
     if imageName is None:
-        raise GMIError("imageName is missing")
+        raise SelectError("imageName is missing")
     
     m = re.match(r'^(.*)(\.)([^.]+)$', imageName)
     if m is None:
-        raise GMIError("MakeInfoName: Invalid image file name '%s'" % imageName)
+        raise SelectError("MakeInfoName: Invalid image file name '%s'" % imageName)
     info_name = m.group(1) + "_" + m.group(3) + ".imageinfo"
     return info_name
 
@@ -235,6 +234,7 @@ End of utility functions
 
 class GoogleMapImage:
     def __init__(self,
+                 gmi=None,
                  ulLat=None, ulLong=None,
                  lrLat=None, lrLong=None,
                  displayRotateChange=False,         # True create displays before and after rotate
@@ -246,9 +246,10 @@ class GoogleMapImage:
                  mapBorderD=None,
                  mapBorderP=None,
                  expandRotate=False,
+                 enlargeForRotate=False,
                  maptype=None, zoom=None, scale=None,
                  add_compass_rose=True,
-                 compassRose=(.75, .25, .10),       # Place compass pointer, -1 ==> none
+                 compassRose=(-1,0),       # Place compass pointer, (-1) ==> none
                                                     # x fraction, y fraction, length fraction
                  showSampleLL=True,                 # Show sample lat long
                  useOldFile=False,                  # Use existing image file even if code changed
@@ -263,6 +264,8 @@ class GoogleMapImage:
                  unit='m'):
         """ Generate map image, given latitute, longitude of upper left
         and lower right corners
+        :gmi: base map, from which we get the image
+                default: no base get info from else where
         :ulLat, ulLong:  Upper left corner latitude, Longitude of image
         :lrLat, lrLong: Lower right corner latitude, longitude of image
         :displayRotateChange: True - create displays unrotated, rotated
@@ -279,8 +282,10 @@ class GoogleMapImage:
                         D - degrees
                         P - pixels
                 Default: 10 meters (e.g. mapBorderM=10)
+        :enlargeForRotae: Enlarge scan to cover corners when/if
+                        rotated Default: True
         :expandRotate: adjust image so rotated image adjusts
-                         to size of outputd
+                         to size of output
                          default: no change
         :maptype: Google Maps type
                     default: 'hybrid'
@@ -318,15 +323,17 @@ class GoogleMapImage:
                             info:  gmi_uLA-20..._png.imageinfo
         :unit: distance unit m,y,f,s default: m(eter)
         """
+        self.base_gmi = gmi
         self.unit = unit
         self.displayRotateChange = displayRotateChange
         self.forceNew = forceNew
         self.useOldFile = useOldFile
         self.expandRotate = expandRotate
+        self.enlargeForRotate = enlargeForRotate
         self.mapRotate = mapRotate
         if (ulLat is not None or ulLong is not None
                 or lrLat is not None or lrLong is not None) and mapPoints is not None:
-            raise GMIError("Use only one of ullat... or mapPoints")
+            raise SelectError("Use only one of ullat... or mapPoints")
         self.mapPoints = mapPoints
         self.add_compass_rose = add_compass_rose
         if not add_compass_rose:
@@ -371,6 +378,8 @@ class GoogleMapImage:
                                                        borderM=mapBorderM,
                                                        borderD=mapBorderD,
                                                        borderP=mapBorderP)
+                display_ulLatLong = ulLatLong
+                display_lrLatLong = lrLatLong
                 ulLat = ulLatLong[0]
                 ulLong = ulLatLong[1]
                 lrLat = lrLatLong[0]
@@ -378,7 +387,6 @@ class GoogleMapImage:
                 SlTrace.lg(("points rotated %.0f deg bounds:" % mapRotate)
                       + "ulLat=%.6f ulLong=%.6f lrLat=%.6f lrLong=%.6f" %
                       (ulLat, ulLong,  lrLat, lrLong))
-                
                 height = gDistance((ulLat, ulLong), (lrLat, ulLong))*1000
                 width = gDistance((ulLat, ulLong), (ulLat, lrLong))*1000
                 diagonal = gDistance((ulLat, ulLong), (lrLat, lrLong))*1000
@@ -392,7 +400,7 @@ class GoogleMapImage:
                     xOffset_m = xOffset/self.unitLen()
                     yOffset_m = yOffset/self.unitLen()
                     ulLat, ulLong = geoMove((ulLat,ulLong), latDist=-yOffset_m, longDist=xOffset_m)
-                                        
+                    display_ulLatLong = ulLat, ulLong                    
                 if xDim is not None:
                     if yDim is None:
                         yDim = xDim
@@ -403,10 +411,43 @@ class GoogleMapImage:
                     latDist = -yDim/unitLen     # y increases downward, lat increases upward
                     longDist = xDim/unitLen     # x increases rightward, longitude increases(less negative) rightward
                     lrLat, lrLong = geoMove((ulLat,ulLong), latDist=latDist, longDist=longDist)
+                    display_lrLat = lrLat 
+                    display_lrLong = lrLong
+
+            centerLat = (ulLat+lrLat)/2
+            centerLong =  (ulLong+lrLong)/2
+            SlTrace.lg(f"Centered: {centerLat} latitude  {centerLong} Longitude")
+            cc_dist = geoDistance(latLong=(ulLat, ulLong), latLong2=(lrLat, lrLong))
+            lat_dist = (ulLat-lrLat)/2
+            long_dist = (lrLong-ulLong)/2
+            self.display_ulLat = ulLat
+            self.display_ulLong = ulLong
+            self.display_lrLat = lrLat 
+            self.display_lrLong = lrLong
+            fmt_ll = ".6f"
+            if enlargeForRotate:
+                SlTrace.lg(f"Before Enlargement for rotate lat dist {lat_dist:{fmt_ll}} long dist {long_dist:{fmt_ll}}")
+                SlTrace.lg("GogleMapImage: ulLat=%.5f ulLong=%.5f lrLat=%.5f lrLong=%.5f" %
+                                    (ulLat, ulLong, lrLat, lrLong))
+                display_cc_dist = geoDistance(latLong=(ulLat, ulLong), latLong2=(lrLat, lrLong))
+                SlTrace.lg("            display corner to corner:= %.2f meters" % display_cc_dist)
+                enlarge_dist = sqrt(lat_dist**2+long_dist**2)
+                ulLat = centerLat + enlarge_dist/2
+                ulLong = centerLong - enlarge_dist/2
+                lrLat = centerLat - enlarge_dist/2
+                lrLong = centerLong + enlarge_dist/2
+                cc_dist = geoDistance(latLong=(ulLat, ulLong), latLong2=(lrLat, lrLong))
+                SlTrace.lg(f"After Enlargement for rotate enlarge: {enlarge_dist:{fmt_ll}} deg")
+                SlTrace.lg(f"Change in diagonal distance: {cc_dist-display_cc_dist} meters")
+                SlTrace.lg("Map changes: ulLat=%.5f ulLong=%.5f lrLat=%.5f lrLong=%.5f" %
+                                    (ulLat-self.display_ulLat, ulLong-self.display_ulLong,
+                                      lrLat-self.display_lrLat, lrLong-display_lrLong))
+                
             SlTrace.lg("GogleMapImage: ulLat=%.5f ulLong=%.5f lrLat=%.5f lrLong=%.5f" %
                                 (ulLat, ulLong, lrLat, lrLong))
-            SlTrace.lg("             corner to corner:= %.2f meters" %
-                                 geoDistance(latLong=(ulLat, ulLong), latLong2=(lrLat, lrLong)))
+            
+            cc_dist = geoDistance(latLong=(ulLat, ulLong), latLong2=(lrLat, lrLong))
+            SlTrace.lg("             corner to corner:= %.2f meters" % cc_dist)
             self.ulLat = ulLat
             self.ulLong = ulLong
             self.lrLat = lrLat
@@ -427,7 +468,10 @@ class GoogleMapImage:
             if file is None:
                 file = self.makeFileName()
             self.file = file                # Save name, if specified
-            self.image = self.getImage()
+            if gmi is not None:
+                self.image = self.selectImage(gmi)
+            else:
+                self.image = self.getImage()
         self.geoDraw = GeoDraw(self.image,
                                ulLat=self.ulLat, ulLong=self.ulLong,
                                lrLat=self.lrLat, lrLong=self.lrLong,
@@ -437,7 +481,10 @@ class GoogleMapImage:
 
         if self.add_compass_rose and self.compassRose is not None:
             self.addCompassRose(self.compassRose)
-            
+
+    def get_filename(self):
+        return self.file
+                
     def makeFileName(self):
         """
         Create descriptive file name to facilitate previous generation to 
@@ -541,14 +588,21 @@ class GoogleMapImage:
     def getWidth(self):
         return self.geoDraw.getWidth()
 
+    def getLatLong(self, latLong=None, pos=None, xY=None, unit=None):
+        """
+        Get/Convert location pixel, longitude, physical location/specification
+        to lat/long
+        """
+        return self.geoDraw.getLatLong(latLong=latLong, pos=pos, xY=xY, unit=unit)
 
 
-    def getXY(self, latLong=None, pos=None, xY=None):
+
+    def getXY(self, latLong=None, pos=None, xY=None, unit=None):
         """
         Get/Convert location pixel, longitude, physical location/specification
         to pixel location
         """
-        return self.geoDraw.getXY(latLong=latLong, pos=pos, xY=xY)
+        return self.geoDraw.getXY(latLong=latLong, pos=pos, xY=xY, unit=None)
 
     def getPos(self, latLong=None, pos=None, xY=None, unit=None, ref_latLong=None):
         """
@@ -735,7 +789,7 @@ class GoogleMapImage:
         Note Image.info structure does not seem to be preserved over all image operations
         """
         if hasInfo:        
-            info_name = self.makeInfoName()
+            info_name = self.makeInfoName(name)
             try:
                 f = open(info_name, "w")
             except (IOError) as e:
@@ -1083,11 +1137,11 @@ class GoogleMapImage:
         self.geoDraw.addScale(**kwargs)
             
             
-    def addCompassRose(self, compassRose):
+    def addCompassRose(self, compassRose=None):
         """
         Add orientation marker
         """
-        self.geoDraw.addCompassRose(compassRose)
+        self.geoDraw.addCompassRose(compassRose=compassRose)
 
     
     def addSample(self, point):
@@ -1112,11 +1166,13 @@ class GoogleMapImage:
 
     def addTrail(self, trail, title=None,
                  color_code=False,color="orange",
+                 width=2.,
                  keep_outside=True):
         """
         :trail: trail info (SurveyTrail), tracks...
         :title: title (may be point file full path)
         :color: trail color
+        :width: trail width in meters
         :color_code: color code longer point distances
         :keep_outside: Keep points even if outside region,
                 False: skip points outside region
@@ -1124,9 +1180,13 @@ class GoogleMapImage:
         """
         return self.geoDraw.addTrail(trail, title=title,
                             color_code=color_code,
+                            width=width,
                             color=color,
                             keep_outside=keep_outside)
 
+    def has_compass_rose(self):
+        return self.geoDraw.has_compass_rose()
+    
     def is_inside(self, latLong=None, pos=None, xY=None):
         """ Test if point is within map borders
         :latLong, pos, xY: location as in getXY,
@@ -1167,15 +1227,32 @@ class GoogleMapImage:
             self.markPoint(point)
                 
 
-
+    def selectImage(self, gmi):
+        """ Select region from pre-existing GoogleMapImage
+        :gmi: pre-existing GoogleMapImage
+        """
+        gmi_rotate = gmi.mapRotate
+        map_rotate = self.mapRotate
+        gmi_image = gmi.image
+        if gmi_rotate is not None or map_rotate is not None:
+            gmi_rotate = 0. if gmi_rotate is None else gmi_rotate
+            map_rotate = 0. if map_rotate is None else map_rotate
+            rel_rotate = map_rotate - gmi_rotate
+            if rel_rotate > 1.e-6:
+                gmi_image = gmi_image.rotate(rel_rotate, expand=False)
+        ulX, ulY = gmi.getXY(latLong=(self.ulLat, self.ulLong))
+        lrX, lrY = gmi.getXY(latLong=(self.lrLat, self.lrLong))
+        new_image = gmi_image.crop((ulX, ulY, lrX, lrY))
+        return new_image
 """
 Stanalone test / exercise:
 """
 if __name__ == "__main__":
     import sys
     import argparse
-    from GMIError import GMIError
-    
+    from select_error import SelectError
+    ll_fmt = ".7f"
+    px_fmt = ".0f"
     forceNew = False
     mapRotate = 45.
     maptype = "hybrid"
@@ -1183,12 +1260,14 @@ if __name__ == "__main__":
     useOldFile = False
     showSampleLL = True
     zoom = None
-    
+    inset = 200
+
     parser = argparse.ArgumentParser()
     parser.add_argument('--maprotate=', type=float, dest='mapRotate', default=mapRotate)
     parser.add_argument('--maptype', dest='maptype', default=maptype)
     parser.add_argument('--showsamplell', dest='showSampleLL', default=showSampleLL, action='store_true')
     parser.add_argument('--forcenew', dest='forceNew', default=forceNew, action='store_true')
+    parser.add_argument('-i', '--inset', type=float, dest='inset', default=inset)
     parser.add_argument('--testmarks', dest='testMarks', default=testMarks, action='store_true')
     parser.add_argument('--notestmarks', dest='testMarks', action='store_false')
     parser.add_argument('--useoldfile', dest='useOldFile', default=useOldFile, action='store_true')
@@ -1200,6 +1279,8 @@ if __name__ == "__main__":
     maptype = args.maptype
     showSampleLL = args.showSampleLL
     forceNew = args.forceNew
+    inset = args.inset
+    useOldFile = args.useOldFile
     zoom = args.zoom
     SlTrace.lg("%s %s\n" % (os.path.basename(sys.argv[0]), " ".join(sys.argv[1:])))
     SlTrace.lg("args: %s\n" % args)
@@ -1225,6 +1306,7 @@ if __name__ == "__main__":
                         mapRotate=mapRotate,
                         forceNew=forceNew,
                         maptype=maptype,
+                        useOldFile=useOldFile,
                         zoom=zoom)
     gmi.addScale()
     
@@ -1273,17 +1355,35 @@ if __name__ == "__main__":
         Do box around orignial ul, lr
         """
         gd = gmi.geoDraw
-        inset = 100
         box_line_width = 10
-        gd.line([gd.addToPoint(latLong=(gmi.ulLat, gmi.ulLong), leng=inset, deg=-45),
-                  gd.addToPoint(latLong=(gmi.ulLat, gmi.lrLong), leng=inset, deg=-180+45),
-                gd.addToPoint(latLong=(gmi.lrLat, gmi.lrLong), leng=inset, deg=-180-45),
-                 gd.addToPoint(latLong=(gmi.lrLat, gmi.ulLong), leng=inset, deg=45),
-                gd.addToPoint(latLong=(gmi.ulLat, gmi.ulLong), leng=inset, deg=-45)],
-                  fill=blue, width=box_line_width)
-    
-            
-            ###break       # limit for debugging TFD
+        inset_points = []
+        inset_points.append(gd.addToPoint(latLong=(gmi.ulLat, gmi.ulLong), leng=inset, deg=-45))
+        inset_points.append(gd.addToPoint(latLong=(gmi.ulLat, gmi.lrLong), leng=inset, deg=-180+45))
+        inset_points.append(gd.addToPoint(latLong=(gmi.lrLat, gmi.lrLong), leng=inset, deg=-180-45))
+        inset_points.append(gd.addToPoint(latLong=(gmi.lrLat, gmi.ulLong), leng=inset, deg=45))
+        inset_points.append(gd.addToPoint(latLong=(gmi.ulLat, gmi.ulLong), leng=inset, deg=-45))
+        gd.line(inset_points, fill=blue, width=box_line_width)
+
+        inset_points_ll = []
+        for xy_pt in inset_points:
+            inset_points_ll.append(gd.getLatLong(xY=xy_pt))
+        
+        SlTrace.lg("inset points")
+        lat_min = gmi.lrLat
+        long_min = gmi.ulLong
+        ip_font = ImageFont.truetype("arial.ttf", size=12)
+
+        for i in range(len(inset_points)):
+            ip = inset_points[i]
+            ip_x, ip_y = ip
+            ip_ll = inset_points_ll[i]
+            ip_lat, ip_long = ip_ll
+            gmi.text(f"ip-{i}", latLong=inset_points_ll[i], fill="orange", font=ip_font)
+            SlTrace.lg(f"{i:2d}: x: {ip_x:{px_fmt}} y: {ip_y:{px_fmt}}"
+                       f"  lat: {ip_lat:{ll_fmt}}[{(ip_lat-lat_min):{ll_fmt}}]  long: {ip_long:{ll_fmt}}[{(ip_long-long_min):{ll_fmt}}] ")
+        min_lat, min_long, max_lat, max_long = minMaxLatLong(inset_points_ll)
+        SlTrace.lg(f" min_lat:{min_lat:{ll_fmt}} min_long:{min_long:{ll_fmt}}"
+                   f" max_lat:{max_lat:{ll_fmt}} max_long:{max_long:{ll_fmt}}")  
     if testMarks:
         ###gmi.addScale(latLong=(42.37350, -71.18318), leng=100, marks=10, unitName="f")
         ###gmi.addScale(latLong=(42.37365, -71.18304), deg=8, leng=100, marks=10, unitName="f", color=(0,0,255))
@@ -1298,7 +1398,23 @@ if __name__ == "__main__":
     else:
         rot_str = "%.3g" % mapRotate
     title = "%s rotate = %s" % (os.path.basename(__file__), rot_str)
-    gmi.addTitle(title)
+    ###gmi.addTitle(title)
     gmi.show()
     gmi.saveAugmented()
+   
+    new_rotate = mapRotate
+    if abs(new_rotate) >= 1:
+        rot_str = "%.0f" % new_rotate
+    else:
+        rot_str = "%.3g" % new_rotate
+    title = f"Selected region rotate = new_rotate:{new_rotate:.1f}"
+    SlTrace.lg(title)
+    selected_gmi = GoogleMapImage(gmi=gmi,
+                        ulLat=max_lat, ulLong=min_long,
+                        lrLat=min_lat, lrLong=max_long,
+                        compassRose=(.25, .75, .1),
+                        mapRotate=new_rotate)
+    ###selected_gmi.addTitle(title)
+    selected_gmi.show()
+
     SlTrace.lg("End of Test")

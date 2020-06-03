@@ -12,6 +12,7 @@ import survey_point_manager
 
 class ScrolledCanvas(Frame):
     def __init__(self, fileName=None, gmi=None, image=None, title=None, parent=None,
+                 mapRotate=None,
                  maptype=None,
                  map_address=None,
                  width=None, height=None,
@@ -31,6 +32,8 @@ class ScrolledCanvas(Frame):
         :fileName - image file, if present or info file if ending with .imageinfo else
         :gmi: GoogleMapImage, if present
         :image - image, if present
+        :mapRotate: map rotation angle, in deg, counter clock wise, with respect to view
+                    default: North (None)
         :mouse_down_call: if present, function to call with x,y canvas coordinates
         :mouse_move_call: if present, function to call with x,y canvas coordinates
                              on mouse motion
@@ -43,6 +46,7 @@ class ScrolledCanvas(Frame):
                 default: create
         :unit: Linear distance unit m(eter), y(ard), f(oot) - default: "m" - meter
         """
+        self.mapRotate = mapRotate
         self.isDown = False
         self.inside = False
         self.scroll_x = 0.          # Scrolling fractions
@@ -102,7 +106,7 @@ class ScrolledCanvas(Frame):
         self.pt_mgr = pt_mgr
         if map_ctl is None:
             if not skip_map_ctl:
-                map_ctl = MappingControl(mgr=pt_mgr, address=map_address)
+                map_ctl = MappingControl(mgr=pt_mgr, address=map_address, mapRotate=self.mapRotate)
         self.map_ctl = map_ctl
         self.set_resize_call(pt_mgr.resize)
 
@@ -117,7 +121,22 @@ class ScrolledCanvas(Frame):
         :returns: return mapping control (MappingControl)
         """
         return self.map_ctl 
-    
+
+    def set_image(self):
+        """ Set image, in preparation to save completed graphics file
+        In genera, copy objects like trails which are canvas based objects to
+        the image
+        """
+        mgr = self.get_pt_mgr()
+        if mgr is None:
+            return
+        trail = mgr.trail
+        if trail is not None:
+            trail.hide()
+            self.gmi.addTrail(mgr.trail, width=trail.width*1.85)
+            self.lower_image()
+            self.size_image_to_canvas()
+                
     def set_resize_call(self, called):
         """ Link resize event to probably SurveyPointManager.resize
         :called:  function called with event
@@ -332,6 +351,20 @@ class ScrolledCanvas(Frame):
         :returns: base Canvas object
         """
         return self.canv
+
+    def get_canvas_height(self):
+        """ Get our canvas width in pixels
+        :returns: width in pixelst
+        """
+        canvas_height = self.get_canvas().winfo_height()
+        return canvas_height
+
+    def get_canvas_width(self):
+        """ Get our canvas width in pixels
+        :returns: width in pixelst
+        """
+        canvas_width = self.get_canvas().winfo_width()
+        return canvas_width
 
     def close(self):
         """

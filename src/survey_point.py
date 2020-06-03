@@ -2,6 +2,8 @@
 """
 Handling point display aspect for points in SurveyPointManager
 """
+from select_trace import SlTrace
+
 from select_trace import SelectError
 from canvas_coords import CanvasCoords
 
@@ -102,7 +104,10 @@ class SurveyPoint:
     def __str__(self):
         """ Point diagnostic representation
         """
-        string = f"SurveyPoint {self.label}: lat: {self.lat} Long: {self.long}"
+        tr_ctl = self.mgr.tr_ctl
+        string = str(f"SurveyPoint {self.label}:"
+                     f" lat: {self.lat:{tr_ctl.ll_fmt}}"
+                     f" Long: {self.long:{tr_ctl.ll_fmt}}")
         return string
             
     def delete(self):
@@ -172,7 +177,9 @@ class SurveyPoint:
             y0 = y - hh
             x1 = x0 + w 
             y1 = y0 + h 
-            self.point_tag = canvas.create_oval(x0, y0, x1, y1, fill=self.color)
+            self.point_tag = canvas.create_oval(x0, y0, x1, y1, fill=self.color,
+                                    outline=self.color,
+                                    activeoutline="red", activefill="red", activewidth=4)
             self.center_tag = canvas.create_oval(x-1, y-1, x+1, y+1, fill=self.center_color)
         elif self.point_type == SurveyPoint.POINT_TYPE_NONE:
             pass    
@@ -183,7 +190,7 @@ class SurveyPoint:
         if not kwargs:
             kwargs['lat'] = self.lat
             kwargs['long'] = self.long
-        return CanvasCoords(self.mgr.sc, **kwargs)
+        return self.mgr.get_canvas_coords(**kwargs)
     
             
     def display_label(self):
@@ -232,9 +239,16 @@ class SurveyPoint:
     def get_canvas(self):
         """ Get canvas directly
         """
-        return self.mgr.get_canvas()
-        
+        return self.get_sc().get_canvas()
 
+    def get_gmi(self):
+        return self.get_sc().gmi
+
+    def get_sc(self):
+        """ Get ScrollableCanvas
+        """
+        return self.mgr.sc
+    
     def move(self, canvas_x=None, canvas_y=None, lat=None, long=None):
         """ Move point
         :x,y: to new canvas point
@@ -294,4 +308,30 @@ class SurveyPoint:
             return over_laps
         
         return []
-            
+
+    def snapshot(self, title=None):
+        """ Snapshot current point stats
+        """
+        if title is None:
+            title = ""
+        else:
+            title = f"{title}: "
+        tr_ctl = self.mgr.tr_ctl
+        px_fmt = tr_ctl.px_fmt
+        dis_fmt = tr_ctl.dis_fmt
+        unit = tr_ctl.unit
+        pc = self.get_canvas_coords()
+        sc = self.get_sc()
+        gmi = self.get_gmi()
+        ll_fmt = tr_ctl.ll_fmt
+        SlTrace.lg(f"{title}Point {self.label}: {self}")
+        SlTrace.lg(f"    Latitude: {pc.lat:{ll_fmt}} Longitude: {pc.long:{ll_fmt}}")
+        SlTrace.lg(f"    x({unit}): {pc.x_dist:{dis_fmt}}  y({unit}): {pc.y_dist:{dis_fmt}}")
+        SlTrace.lg(f"    x(image pix): {pc.x_image:{px_fmt}}  y(image pix): {pc.y_image:{px_fmt}}")
+        SlTrace.lg(f"    x(canvas pix): {pc.canvas_x:{px_fmt}}  y(canvas pix): {pc.canvas_y:{px_fmt}}")
+        rotate = gmi.mapRotate if gmi.mapRotate is not None else 0.
+        SlTrace.lg(f"    rot({rotate})")
+        SlTrace.lg(f"    ulLat: {gmi.ulLat:{ll_fmt}} ulLong: {gmi.ulLong:{ll_fmt}}")
+        SlTrace.lg(f"    lrLat: {gmi.lrLat:{ll_fmt}} lrLong: {gmi.lrLong:{ll_fmt}}")
+        SlTrace.lg(f"    Image: Width: {gmi.getWidth():{px_fmt}} Height: {gmi.getHeight():{px_fmt}}")
+        SlTrace.lg(f"    Canvas: Width: {sc.get_canvas_width():{px_fmt}} Height: {sc.get_canvas_height():{px_fmt}}")

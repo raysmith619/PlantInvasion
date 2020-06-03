@@ -265,13 +265,10 @@ class PointPlace(Toplevel):
     def snapshot(self):
         """ Snapshot current point stats
         """
-        pc = CanvasCoords(self.sc, lat=self.point.lat, long=self.point.long, unit=self.unit)
-        SlTrace.lg(f"Point {self.point.label}: {self.point}")
-        SlTrace.lg(f"    Latitude: {pc.lat:{self.ll_fmt}} Longitude: {pc.long:{self.ll_fmt}}")
-        SlTrace.lg(f"    x({self.unit}): {pc.x_dist:{self.dis_fmt}}  y({self.unit}): {pc.y_dist:{self.dis_fmt}}")
-        SlTrace.lg(f"    x(image pix): {pc.x_image:{self.px_fmt}}  y(image pix): {pc.y_image:{self.px_fmt}}")
-        SlTrace.lg(f"    x(canvas pix): {pc.canvas_x:{self.px_fmt}}  y(canvas pix): {pc.canvas_y:{self.px_fmt}}")
+        if self.point is None:
+            return
         
+        self.point.snapshot(title=f"Tracking: {self.point.label}")
         
     def motion_update(self, canvas_x, canvas_y):
         """ Update based on position

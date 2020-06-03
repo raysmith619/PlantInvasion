@@ -57,6 +57,7 @@ SlTrace.lg(pgm_info)
 trace = ""
 undo_len=200           # Undo length (Note: includes message mcd
 
+mapRotate = 45.
 profile_running = False
 lat = 42.34718
 long = -71.07317
@@ -84,6 +85,7 @@ parser = argparse.ArgumentParser()
 
 parser.add_argument('-a', '--address=', dest='address', default=address)
 parser.add_argument('-m', '--mapfile=', dest='map_file', default=map_file)
+parser.add_argument('-r', '--maprotate=', type=float, dest='mapRotate', default=mapRotate)
 parser.add_argument('-i', '--infofile=', dest='infoFile', default=infoFile)
 parser.add_argument('-f', '--image_file_name', '--file', dest='image_file_name', default=image_file_name)
 parser.add_argument('-l', '--lat_long', dest='lat_long', default=lat_long)
@@ -111,6 +113,7 @@ height = args.height
 map_file = args.map_file
 if map_file == "TEST":
     map_file = test_map_file      # Use test file
+mapRotate = args.mapRotate
 trailfile = args.trailfile
 infoFile = args.infoFile
 width = args.width
@@ -172,6 +175,9 @@ def add_sample_file():
     """
     global samplefile
     
+    if sc is None or sc.gmi is None:
+        return
+    
     if samplefile is None:
         samplefile = filedialog.askopenfilename(
             initialdir= "../data",
@@ -201,6 +207,20 @@ def add_sample_file():
     if pt_mgr is not None:
         pt_mgr.add_point_list(spx, name="samples", title=samplefile)
 
+def favorites():
+    """ Shortcut to Mapping Control Favorites button
+    """
+    if sc is None:
+        return
+    
+    sc.map_ctl.get_favorites()
+
+def save_map_file():
+    if pt_mgr is None:
+        return
+    
+    pt_mgr.save_map_file()
+    
 def add_trail_file():
     """ add trail file to display
     """
@@ -212,7 +232,7 @@ def add_trail_file():
         
     if trailfile is None or trailfile == "ASK":
         trailfile = filedialog.askopenfilename(
-            initialdir= "../data",
+            initialdir= "../new_data",
             title = "Add Trail File",
             filetypes= (("Trail files", "*.gpx"),
                         ("all files", "*.*"))
@@ -227,17 +247,52 @@ def add_trail_file():
             
     pt_mgr.add_trail_file(trailfile)
 
+def add_compass_rose():
+    """ Add Compass Rose to map
+    """
+    if pt_mgr is None:
+        return
+    
+    gmi = pt_mgr.get_gmi()
+    if gmi is None:
+        return
+
+    gmi.addCompassRose()
+    
 def map_region():
     if pt_mgr is not None:
         if not pt_mgr.map_region():
             SlTrace.report("No region created")
 
-def map_someplace():
+def select_region():
+    if pt_mgr is not None:
+        if not pt_mgr.select_region():
+            SlTrace.report("No region created")
+
+def use_region():
+    global sc
+    
+    if  pt_mgr is None:
+        return
+    
+    pt_mgr.use_region()
+    
+def set_image():
+    if sc is not None:
+        sc.set_image()
+
+def rotate_map():
     if pt_mgr is None:
         return
     
-    MappingControl(pt_mgr)
-    
+    pt_mgr.rotate_map()
+
+def drag_map():
+    pass
+
+def use_map():
+    pass
+        
 def tracking_update(changes):
     """ Tracking update processor
     :changes: list of changed items
@@ -270,7 +325,8 @@ def do_lat_long(lat_long, xDim=40,  zoom=22, unit='m'):
     global gmi
     
     ulLat, ulLong = lat_long
-    gmi = GoogleMapImage(ulLat=ulLat, ulLong=ulLong, xDim=xDim, zoom=zoom, unit=unit)
+    gmi = GoogleMapImage(ulLat=ulLat, ulLong=ulLong, xDim=xDim, zoom=zoom, unit=unit,
+                          mapRotate=mapRotate)
     gmi.saveAugmented()             # Save file for reuse
     return  gmi.makeFileName()
 
@@ -296,13 +352,41 @@ def do_address(address):
     return do_lat_long(lat_long)
 
 
-app.add_menu_command("Map Some Place", map_someplace)
-app.add_menu_separator()
-app.add_menu_command("Save Trail File", save_trail_file)
-app.add_menu_command("Track Points", track_points)
-app.add_menu_command("Add Trail File", add_trail_file)
-app.add_menu_command("Add Sample File", add_sample_file)
-app.add_menu_command("Map Region", map_region)
+menubar, filemenu = app.add_menu()
+filemenu.add_command(label="Favorites", command=favorites)
+filemenu.add_command(label="Save Map", command=save_map_file)
+menubar.add_cascade(label="Maps", menu=filemenu)
+
+menubar, filemenu = app.add_menu()
+filemenu.add_command(label="Add Trail File", command=add_trail_file)
+filemenu.add_command(label="Add Sample File", command=add_sample_file)
+filemenu.add_separator()
+filemenu.add_command(label="Add Compass Rose", command=add_compass_rose)
+menubar.add_cascade(label="Add to Map", menu=filemenu)
+
+menubar, filemenu = app.add_menu()
+filemenu.add_command(label="Set Image", command=set_image)
+filemenu.add_command(label="Save Trail File", command=save_trail_file)
+filemenu.add_separator()
+filemenu.add_command(label="Track Points", command=track_points)
+menubar.add_cascade(label="Trail Operation", menu=filemenu)
+
+menubar, filemenu = app.add_menu()
+filemenu.add_command(label="Select Region", command=select_region)
+filemenu.add_separator()
+filemenu.add_command(label="Map Region", command=map_region)
+filemenu.add_separator()
+filemenu.add_command(label="USE Region", command=use_region)
+menubar.add_cascade(label="Region Operation", menu=filemenu)
+
+menubar, filemenu = app.add_menu()
+filemenu.add_command(label="Rotate Map", command=rotate_map)
+filemenu.add_separator()
+filemenu.add_command(label="Drag Map", command=drag_map)
+filemenu.add_separator()
+filemenu.add_command(label="USE Map", command=use_map)
+menubar.add_cascade(label="Arrange Map", menu=filemenu)
+
 
 if map_file == "TEST":
     map_file = test_map_file

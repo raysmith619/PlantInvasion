@@ -61,6 +61,9 @@ class TrackingControl(SelectControlWindow):
         self.tracked_items = []
         self.current_region = None  # list of points in order, else None
         self.regions = []       # list of completed regions, each a list of points
+        self.px_fmt = ".0f"             # pixel format
+        self.ll_fmt = ".7f"             # longitude/latitude format
+        self.dis_fmt = ".1f"             # linear format
         super().__init__(title=title, control_prefix=control_prefix,
                        **kwargs)
         self.control_display()
@@ -302,6 +305,7 @@ class TrackingControl(SelectControlWindow):
             label = self.trail.label_pattern % (seg_no, pt_no)
             point = SurveyPoint(self.mgr, label=label, color=color_points,
                                 lat=lat, long=long)
+            point.snapshot(title=f"\n make_point on trail")
             segment.add_points(point)
             self.mgr.add_point(point, track=False)
             seg_points = segment.get_points()
@@ -312,6 +316,7 @@ class TrackingControl(SelectControlWindow):
                          display_monitor=trail.display_monitor)
         else:
             point = SurveyPoint(self.mgr, lat=lat, long=long)
+            point.snapshot(title=f"\n make_point")
             self.mgr.in_point_is_down = True                        # Standard continuation for regualar new points
             self.mgr.in_point = point
             self.mgr.in_point_start = (lat, long)
@@ -331,12 +336,27 @@ class TrackingControl(SelectControlWindow):
         
         if self.current_region is None:
             self.current_region = SurveyRegion(self.mgr)
+            SlTrace.lg(f"Starting region with {point}")
         self.current_region.add_points(point)     # Add most recent point
         if self.auto_tracking == "adjacent_pairs":
             """ Track (connect) points in current region """
-            if self.current_region is not None and len(self.current_region.points) > 1:
-                self.track_two_points(self.current_region.points[-2],
-                                      self.current_region.points[-1])
+            self.augment_region()
+            
+    def augment_region(self, point1=None, point2=None):
+        if point1 is None and len(self.current_region.points) > 1:
+            point1 = self.current_region.points[-2]
+        if point2 is None and len(self.current_region.points) > 0:
+            point2 = self.current_region.points[-1]
+        
+        if point1 is not None and point2 is not None:
+            SlTrace.lg(f"Adding to region with {point2}")
+            connection_line = self.get_val("connection.line", self.connection_line)
+            connection_line_color=self.get_val("line_attributes.color", self.connection_line_color)
+            connection_line_width=self.get_val("line_attributes.width", self.connection_line_width)
+            self.track_two_points(point1, point2,
+                              line_type=connection_line,
+                              color=connection_line_color,
+                              width=connection_line_width)
                 
     def change_connection_line(self, connection_line):
         if connection_line is None:
@@ -373,8 +393,8 @@ class TrackingControl(SelectControlWindow):
             return False
         
         # Track completion edge
-        self.track_two_points(self.current_region.points[-1],
-                              self.current_region.points[0])
+        self.augment_region(point1=self.current_region.points[-1], point2=self.current_region.points[0])
+        self.current_region.completed = True
         self.regions.append(self.current_region)
         self.current_region = None
         return True
@@ -430,7 +450,7 @@ class TrackingControl(SelectControlWindow):
         if region is not None:
             list_segments = []
             for seg in trail_segments:      # Add segment if any point is inside
-                for pt in seg.get_points:
+                for pt in seg.get_points():
                     if region.is_inside(pt):
                         list_segments.append(seg)
                         break 
@@ -632,7 +652,7 @@ class TrackingControl(SelectControlWindow):
         """ Show trail with points visible
         """
         if self.trail is not None:
-            self.trail.show_points()
+            self.mgr.overlayTrail(show_points=True)
     
     def hide_trail_points(self):
         """ Hide trail points
@@ -676,7 +696,7 @@ class TrackingControl(SelectControlWindow):
         connection_line_color=self.get_val("line_attributes.color", self.connection_line_color)
         connection_line_width=self.get_val("line_attributes.width", self.connection_line_width)
                   
-        self.track_two_pints(point1, point2,
+        self.track_two_points(point1, point2,
             color=connection_line_color,
             width=connection_line_width,
             line_type=connection_line,

@@ -324,7 +324,7 @@ if showtrail:
         trailfile = filedialog.askopenfilename(
             initialdir= "../new_data",
             title = "Trail Files",
-            filetypes= (("trail files", "*.png"),
+            filetypes= (("trail files", "*.gpx"),
                          ("all files", "*.*"))
                        )
         

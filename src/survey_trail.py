@@ -37,7 +37,7 @@ class SurveyTrail:
         self.label_pattern = label_pattern
         self.color = color
         self.width = width      # in meters
-        self.line_width = int(mgr.meterToPixel(width))
+        self.line_width = int(mgr.meterToCanvasPixel(width))
 
         self.line_type = line_type
         self.display_monitor = display_monitor
@@ -72,6 +72,19 @@ class SurveyTrail:
         for segment in self.get_segments():
             segment.hide_points()
 
+    def hide(self):
+        """ Hide trail
+        """
+        self.hide_points()
+        for segment in self.get_segments():
+            segment.hide()
+
+    def hide_point_tracking(self, *points):
+        """ Hide points
+        :points: zero or more args, each of which is a point or list of points
+        """
+        self.mgr.hide_point_tracking(*points)
+        
     def delete_point(self, point):
         """ Remove point from system
         """

@@ -58,10 +58,22 @@ class SurveyRegion:
                 if prev_point is not None:
                     edge = SurveyEdge(self.mgr, prev_point, point)
                     self.add_edges(edge)
+                    prev_point = point
         self.add_edges(SurveyEdge(self.mgr, self.points[-1], self.points[0]))            
         self.completed = True
         return True
-                    
+
+    def get_bearing(self):
+        """ get region rotation
+            assume direction p2 -> p1
+        """
+        pts = self.get_points()
+        
+        p1, p2 = pts[0], pts[1]
+        from GeoDraw import get_bearing
+        bearing = get_bearing(p2, p1)
+        return bearing
+        
     def get_points(self):
         """ Get points in region's perimeter possibility not complete
         :returns: list of points

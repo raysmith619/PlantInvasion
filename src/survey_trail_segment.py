@@ -36,6 +36,10 @@ class SurveyTrailSegment:
         """
         return None if len(self.points) == 0 else self.points[-1]
 
+    def hide(self):
+        self.hide_points()
+        self.trail.hide_point_tracking(self.get_points())
+            
     def hide_points(self):
         """ Show points
         """

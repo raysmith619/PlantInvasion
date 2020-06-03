@@ -3,8 +3,10 @@ Interface to Pillow Image facilitating map annotation
 """
 import os
 from PIL import Image, ImageDraw, ImageFont
-from math import cos, sin, sqrt, asin, atan2, pi, ceil
-from GMIError import GMIError
+from math import cos, sin, sqrt, asin, atan2, pi, ceil, radians
+from geographiclib.geodesic import Geodesic
+
+from select_error import SelectError
 from builtins import staticmethod
 ###from openpyxl.drawing.effect import Color
 ###from idlelib.colorizer import color_config
@@ -12,6 +14,18 @@ from builtins import staticmethod
 
 from select_trace import SlTrace
 from survey_trail import SurveyTrail
+from compass_rose import CompassRose
+
+def get_bearing(p1, p2):
+    """ Get bearing p1 to p2, given two points p1, p2
+    :p1,p2: points(latitude, longitude)
+    From Stackoverflow.com Sterling Butters
+    """
+    lat1, long1 = p1.lat, p1.long
+    lat2, long2 = p2.lat, p2.long
+
+    brng = Geodesic.WGS84.Inverse(lat1, long1, lat2, long2)['azi1']
+    return brng
 
 EARTH_RADIUS = 6378137.
 EQUATOR_CIRCUMFERENCE = 2 * pi * EARTH_RADIUS
@@ -23,6 +37,37 @@ def rad2deg(rad):
     return rad/pi*180.
     
 trace_scale = False
+
+def minMaxLatLong(points):
+    """
+    Given point pairs lat,long, calculate max, min and
+    dictionary of 'max_lat', 'min_lat, 'max_long', 'min_long' values
+    followed by a dictionary of 'max_lat', 'min_lat, 'max_long', 'min_long' indexes into points
+    Includes the maximum of initial and rotated points
+    :points: list of SamplePoint
+    :returns: minLat,minLog, maxLong, maxLong
+    """
+    max_lat = None
+    min_lat = None
+    max_long = None
+    min_long = None
+    for point in points:
+        if isinstance(point, dict):
+            lat, long = point["lat"], point["long"] # Dict 
+        elif isinstance(point, tuple):       # Tuple
+            lat, long = point
+        else:
+            lat, long = point.lat, point.long
+        
+        if max_lat is None or lat > max_lat:
+            max_lat = lat
+        if min_lat is None or lat < min_lat:
+            min_lat = lat
+        if max_long is None or long > max_long:
+            max_long = long
+        if min_long is None or long < min_long:
+            min_long = long
+    return min_lat, min_long, max_lat, max_long
     
 def geoDistance(latLong=None, latLong2=None):
     """
@@ -104,7 +149,7 @@ def geoUnitLen(unit="meter"):
     elif uname == "s":      # smoot
         unitLen = 1.7018
     else:
-        raise GMIError(f"Unrecognized unit name '{unit}' choose f[oot],m[eter],y, or s")
+        raise SelectError(f"Unrecognized unit name '{unit}' choose f[oot],m[eter],y, or s")
 
     return unitLen
 
@@ -174,9 +219,10 @@ class GeoDraw:
         :deg - drawing pen current direction in degrees (counter clockwise)
         :theta - drawing pen current direction in radians
         """
-    
+        self.in_pixelToLatLong = 0      # Debugging level count
+        self.in_latLongToPixel = 0
         self.showSampleLL = showSampleLL
-            
+        self.compass_rose = CompassRose(present=False)    
         if image is None:
             image = Image.new("RGB", (400, 200))
         self.setImage(image)
@@ -192,7 +238,7 @@ class GeoDraw:
         self.expandRotate = expandRotate
         
         if deg is not None and theta is not None:
-            raise GMIError("Only deg or theta is allowed")
+            raise SelectError("Only deg or theta is allowed")
         if theta is not None:
             deg = theta/pi * 180
         self.deg = deg          #None - unrotated
@@ -203,10 +249,10 @@ class GeoDraw:
             self.lrLong = lrLong
             
         if ulLat is not None and lrX is not None:
-            raise GMIError("Only one of ulLat and lrX can be specified")
+            raise SelectError("Only one of ulLat and lrX can be specified")
         if ulLong is not None and lrY is not None:
-            raise GMIError("Only one of ulLong or lrY can be specified")
-
+            raise SelectError("Only one of ulLong or lrY can be specified")
+        
         if ulX is None: 
             """
             The normal case - set distance square
@@ -224,6 +270,9 @@ class GeoDraw:
             lat_rad = lat_avg*pi/180.
             lrX = ulX + cos(lat_rad) * (self.lrLong-self.ulLong) / 360. * EQUATOR_CIRCUMFERENCE
             lrY = ulY + (self.ulLat-self.lrLat) / 360. * EQUATOR_CIRCUMFERENCE
+        self.long_width = self.lrLong-self.ulLong    # increase left to right
+        self.lat_height = self.ulLat-self.lrLat      # increase ulLat: upper(more) to lrLat: lower(less)
+
         SlTrace.lg(f"Loaded Image: width:{self.getWidth()} height:{self.getHeight()}")
         SlTrace.lg(f"Distance coordinates(meters):"
               f"\n\tUpper Left x:{ulX:.1f} y:{ulY:.1f}"
@@ -305,7 +354,7 @@ class GeoDraw:
         if nb_spec == 0:
             border = gd.meterToPixel(100.)
         if nb_spec > 1:
-            raise GMIError("Can't use more than one of borderM, borderD, borderP")
+            raise SelectError("Can't use more than one of borderM, borderD, borderP")
         
         ulLatLong1 = (ulLat, ulLong)
         lrLatLong1 = (lrLat, lrLong)
@@ -328,6 +377,7 @@ class GeoDraw:
                                     )
         return ulLatLong1, lrLatLong1
 
+
     @staticmethod    
     def limitsLatLong(points, rotate):
         """
@@ -347,7 +397,12 @@ class GeoDraw:
         min_long1 = None
         trace_ck = False
         for index, point in enumerate(points):
-            lat1, long1 = point.latLong()
+            if isinstance(point, dict):
+                lat1, long1 = point["lat"], point["long"]
+            elif isinstance(point, tuple):
+                lat1, long1 = point
+            else:
+                lat1, long1 = point
             
             if max_lat1 is None or lat1 > max_lat1:
                 max_lat1 = lat1
@@ -442,13 +497,16 @@ class GeoDraw:
                 'min_y' : min_y}, limit_pointh
 
             
-    def addCompassRose(self, compassRose):
+    def addCompassRose(self, compassRose=None):
         """
         Add orientation marker
         """
         SlTrace.lg("addCompassRose")
         if compassRose is None:
-            compassRose = (.5, .5, .25)
+            compassRose = (.25, .75, .25)
+        self.compass_rose = CompassRose(x_fract=compassRose[0],
+                                        y_fract=compassRose[1],
+                                        len_fract=compassRose[2])
         xFraction = compassRose[0]
         yFraction = compassRose[1]
         lenFraction = compassRose[2]
@@ -463,7 +521,7 @@ class GeoDraw:
         arrow_width = self.adjWidthBySize(4)
         self.lineSeg(xY=xY, leng=arrow_len, deg=north_deg, fill=arrow_color, width=arrow_width)
         arrow_point_xy = self.addToPoint(xY=xY, leng=arrow_len, deg=north_deg)
-        arrow_head_width = 2*arrow_width
+        arrow_head_width = int(1.2*arrow_width)
         head_len = arrow_len/5.
         left_edge_deg = north_deg-20. - 180.
         self.lineSeg(xY=arrow_point_xy, leng=head_len, deg=left_edge_deg,
@@ -480,11 +538,13 @@ class GeoDraw:
 
 
     def addTrail(self, trail_in, title=None, color_code=False,color="orange",
-                 keep_outside=True):
+                 keep_outside=True,
+                 width=3.):
         """
         :trail_in: trail input trail info
         :title: title (may be point file full path)
         :color: trail color
+        :width: trail width in meters
         :color_code: color code longer point distances
         :keep_outside: Keep points even if outside region
                 further back than self.max_dist_allowed,
@@ -495,7 +555,6 @@ class GeoDraw:
             self.title = os.path.basename(title)
             title_xy = (self.getWidth()*.5, self.getHeight()*.05)
             self.addTitle(self.title, xY=title_xy)
-        self.trail_width = 2.       # Trail width in meters
         self.max_dist_allowed = 150.
         trail = self.cleanTrail(trail_in, keep_outside=keep_outside)
         for track in trail.get_segments():
@@ -503,7 +562,7 @@ class GeoDraw:
             if color_code:
                 return self.addTrail_color_code(points)
             
-            line_width = int(self.meterToPixel(self.trail_width))
+            line_width = int(self.meterToPixel(width))
             line_points = []
             for point in points:
                 latLong = (point.lat, point.long)
@@ -556,9 +615,13 @@ class GeoDraw:
         label_size = 30
         label_font = ImageFont.truetype("arial.ttf", size=label_size)
         latlong_size = label_size/2
-        plot_key = point.get_plot_key()
+        if isinstance(point, dict):
+            plot_key = point["plot"]                    # Older
+            lat, long = point["lat"], point["long"]
+        else:
+            plot_key = point.get_plot_key()
+            lat, long = point.latLong()
         plot_id = plot_key
-        lat, long = point.latLong()
         xY = self.getXY(latLong=(lat,long))
         plot_color = (0,255,0, 128)
         plot_radius = 10.
@@ -753,23 +816,23 @@ class GeoDraw:
                 deg = 0.
             
         if np1_spec == 0:
-            raise GMIError("Atleast one of xY, pos, latLong must be present")
+            raise SelectError("Atleast one of xY, pos, latLong must be present")
         if np1_spec > 1:
-            raise GMIError("Only one of xY, pos, latLong is allowed")
+            raise SelectError("Only one of xY, pos, latLong is allowed")
 
 
         if np2_spec > 0 and leng is not None:
-            raise GMIError("leng is not alowed when ending point is specified")
+            raise SelectError("leng is not alowed when ending point is specified")
         if  np2_spec > 0 and deg is not None:
-            raise GMIError("deg is not allowed when ending point is specified")
+            raise SelectError("deg is not allowed when ending point is specified")
         
         if np2_spec == 0 and leng is None:
             leng = self.getWidth()*.8
         if np2_spec > 1:
-            raise GMIError("Only one of xYEnd, posEnd, or latLongEnd may be specified")
+            raise SelectError("Only one of xYEnd, posEnd, or latLongEnd may be specified")
             
         if np1_spec > 1:
-            raise GMIError("Only one of xY, pos, latLong is allowed")
+            raise SelectError("Only one of xY, pos, latLong is allowed")
         unitLen = self.unitLen(unitName)
         
         if bigMarks is None:
@@ -868,14 +931,16 @@ class GeoDraw:
         :unit: unit default: self.unit, meter
         """
         if leng is None:
-            raise GMIError("leng is required")
+            raise SelectError("leng is required")
+        if not isinstance(leng, float) and not isinstance(leng, int):
+            raise SelectError(f"leng({leng} {type(leng)}) must be a float or int")
         
         if unit is None:
             unit = self.unit
         leng /= self.unitLen(unit)
             
         if theta is not None and deg is not None:
-            raise GMIError("Only specify theta or deg")
+            raise SelectError("Only specify theta or deg")
         if theta is not None:
             deg = theta / pi * 180
         if deg is None:
@@ -889,11 +954,11 @@ class GeoDraw:
         if latLong is not None:
             npxl += 1
         if npxl > 1:
-            raise GMIError("Only specify one of xY, pos or latLong")
+            raise SelectError("Only specify one of xY, pos or latLong")
         if npxl != 1:
-            raise GMIError("Must specify one of xY, pos or latLong")
+            raise SelectError("Must specify one of xY, pos or latLong")
         if leng is None:
-            raise GMIError("leng is required")
+            raise SelectError("leng is required")
         
         xY = self.getXY(xY=xY, pos=pos, latLong=latLong)
             
@@ -918,6 +983,8 @@ class GeoDraw:
         """
         mindim = min(self.getWidth(), self.getHeight())
         adj_lineWidth = lineWidth
+        if mindim == 0:
+            mindim = 1
         line_fract = lineWidth/mindim
         min_line_fract = .001
         if line_fract < min_line_fract * adj_lineWidth:
@@ -940,7 +1007,7 @@ class GeoDraw:
         """
     
         if box is None:
-            raise GMIError("crop: box is required")
+            raise SelectError("crop: box is required")
         print("before crop")
         i_width, i_height = self.image.size
         print("x width=%.2f y height=%.2f" %
@@ -1004,12 +1071,12 @@ class GeoDraw:
         return self.image.width
 
 
-    def getLatLong(self, latLong=None, pos=None, xY=None):
+    def getLatLong(self, latLong=None, pos=None, xY=None, unit=None):
         """
         Get/Convert location pixel, longitude, physical location/specification
         to lat/long
         """
-        xY = self.getXY(latLong=latLong, pos=pos, xY=xY)
+        xY = self.getXY(latLong=latLong, pos=pos, xY=xY, unit=unit)
         latLong = self.pixelToLatLong(xY)
         return latLong
 
@@ -1023,7 +1090,7 @@ class GeoDraw:
         :xY: x,y position pair in pixels
         :unit: output distance units meter, yard, feet
             default: m(eter)
-        :orig_latLong: if present, give position relative to reference
+        :ref_latLong: if present, give position relative to reference
                     latitude, longitude
         :returns: x,y position in unit
         """
@@ -1057,7 +1124,7 @@ class GeoDraw:
             nloc_spec += 1
         
         if nloc_spec > 1:
-            raise GMIError("May specify, at most, one of latLong, pos, or xY")
+            raise SelectError("May specify, at most, one of latLong, pos, or xY")
         
         if latLong is not None:
             xY =  self.latLongToPixel(latLong)
@@ -1066,6 +1133,13 @@ class GeoDraw:
         if xY is None:
             xY = self.curXY
         return xY
+
+
+    def has_compass_rose(self):
+        """ Check if map has been augmented by Compass Rose
+        """
+        return self.compass_rose.present
+
 
     def is_inside(self, latLong=None, pos=None, xY=None):
         """ Test if point is within map borders
@@ -1083,68 +1157,131 @@ class GeoDraw:
     def latLongToPixel(self, latLong):
         """
         Convert latitude, longitude to pixel location on image
-        Assumes if map is rotated, then rectangular image rotated and expanded so map will fit
-        Returning x,y pair
+        1. Rotate from mapRotate to North Facing
+        2. Scale from longLat to x,y pixel
+        3. Rotate back to mapRotate
+        :returns: x,y pixels
         """
         if latLong is None:
-            raise GMIError("latlongToPixel: latLong required");
+            raise SelectError("latlongToPixel: latLong required");
+        
+        self.in_latLongToPixel += 1
         lat = latLong[0]
         long = latLong[1]
-        lat_offset = lat - self.ulLat         # from upper left corner - - increase down
+        lat_offset = self.ulLat - lat         # from upper left corner - latitude decreases down
         long_offset = long - self.ulLong      # increase left to right
-        diff_long = (self.lrLong-self.ulLong)    # increase left to right
-        mx = long_offset/diff_long*self.getWidth() if diff_long != 0. else 0.
-        diff_lat = (self.lrLat-self.ulLat)         # increase ulLat: upper(less) to lrLat: lower(bigger)
-        my = lat_offset/diff_lat*self.getHeight() if diff_lat != 0. else 0.
-        if self.mapRotate is not None:
-            mapTheta = -deg2rad(self.mapRotate)
-            # Translate to center of image
-            mx_c = mx - self.getWidth()/2.
-            my_c = my - self.getHeight()/2.
-            mx2_c = mx_c * cos(mapTheta) - my_c * sin(mapTheta)
-            my2_c = my_c * cos(mapTheta) + mx_c * sin(mapTheta)
-            # Translate back to original coordinate system
-            mx2 = mx2_c + self.getWidth()/2.
-            my2 = my2_c + self.getHeight()/2.
-            mx = mx2
-            my = my2
-            
+        long_offset, lat_offset = self.rotate_xy(       # Returns: x-offset(longitude),
+                                                        #          y-offset(latitude)
+                    x=long_offset, y=lat_offset,
+                    width=self.long_width, height=self.lat_height,
+                    deg=0 if self.mapRotate is None else -self.mapRotate)
+        mx = long_offset/self.long_width*self.getWidth()
+        my = lat_offset/self.lat_height*self.getHeight()
+        
+        mx, my = self.rotate_xy(x=mx, y=my,
+                            width=self.getWidth(), height=self.getHeight(),
+                            deg=0 if self.mapRotate is None else self.mapRotate)
+
+        if self.in_pixelToLatLong == 0:
+            latLong2 = self.pixelToLatLong((mx,my))
+            latchg = latLong2[0]-latLong[0]
+            longchg = latLong2[1]-latLong[1]
+            max_diff = 5e-3
+            if abs(latchg) > max_diff or abs(longchg) > max_diff:
+                SlTrace.lg(f"latLongToPixel rot({self.mapRotate}) not reversable: latchg:{latchg:.7} longchg:{longchg:.7}")
+                SlTrace.lg(f"    latLong:{latLong} latLong2:{latLong2}")
+
+
+        self.in_latLongToPixel -= 1            
         return mx, my
 
 
     def pixelToLatLong(self, xY):
         """
         Convert  pixel x,y to latitude, longitude
-        Assumes if map is rotated, then x,y is rotated before translation
-        Returning x,y pair
+        1. Rotate from mapRotate to North Facing
+        2. Scale from x,y pixel to latLong
+        3. Rotate back to mapRotate
+        Returning lat,Long pair
         """
+        self.in_pixelToLatLong += 1
+        xY1 = xY
         if xY is None:
-            raise GMIError("pixelToLatLong: pixel required")
-        mx = xY[0]        # from upper left corner
-        my = xY[1]
-        if self.mapRotate is not None:
-            mapTheta = -deg2rad(self.mapRotate)
-            # Translate to center of image
-            mx_c = mx - self.getWidth()/2.
-            my_c = my - self.getHeight()/2.
-            mx2_c = mx_c * cos(mapTheta) - my_c * sin(mapTheta)
-            my2_c = my_c * cos(mapTheta) + mx_c * sin(mapTheta)
-            # Translate back to original coordinate system
-            mx2 = mx2_c + self.getWidth()/2.
-            my2 = my2_c + self.getHeight()/2.
-           
-            mx = mx2
-            my = my2
+            raise SelectError("pixelToLatLong: pixel required")
         
-        long_offset = mx * (self.lrLong-self.ulLong) / self.getWidth()
-        lat_offset = my * (self.ulLat-self.lrLat) / self.getHeight()
+        mx, my = self.rotate_xy(x=xY[0], y=xY[1],
+                            width=self.getWidth(), height=self.getHeight(),
+                            deg=0 if self.mapRotate is None else -self.mapRotate)
+        long_offset = mx * self.long_width / self.getWidth()
+        lat_offset = my * self.lat_height / self.getHeight()
+        long_offset, lat_offset = self.rotate_xy(       # Returns: x (longitude offset) right
+                                                        #          y (latitude offset) downwards
+                                    x=long_offset, y=lat_offset,
+                                    width=self.long_width, height=self.lat_height,
+                                    deg=0 if self.mapRotate else self.mapRotate)
 
+        lat = self.ulLat - lat_offset           # Offset down from upper left corner
         long = self.ulLong + long_offset
-        lat = self.ulLat - lat_offset
+        if self.in_latLongToPixel == 0:
+            xY2 = self.latLongToPixel((lat,long))
+            xchg = xY2[0]-xY1[0]
+            ychg = xY2[1]-xY1[1]
+            if abs(xchg) > 1e-7 or abs(ychg) > 1e-7:
+                SlTrace.lg(f"pixelToLat rot({self.mapRotate}) not reversable: xchg:{xchg:.7} ychg:{ychg:.7}")
+                SlTrace.lg(f"    xY1:{xY1} xY2:{xY2}")
 
+        self.in_pixelToLatLong -= 1
         return lat, long
         
-        
+    def rotate_xy(self, x=None, y=None, width=None, height=None, deg=None):
+        """ Rotate point x,y deg degrees(counter clockwise
+         about the center (Width/2, Hight/2)
+        :x: x value horizontal increasing to right
+        :y: y value, vertical increasing to down
+        :width: x width default: self.lr
+        :height:  y height
+        :deg: rotation, in degrees,
+                default: self.mapRotate
+        :returns: x,y updated by rotation
+        """
+        if deg is None:
+            deg = self.mapRotate
+        angle = -radians(deg)           # Adjust for downward going y
+        if width is None:
+            width=self.getWidth()
+        if height is None:
+            height=self.getHeight(),
+
+        ox, oy = width/2, height/2
+        px, py = x, y
+        qx = ox + math.cos(angle) * (px - ox) - math.sin(angle) * (py - oy)
+        qy = oy + math.sin(angle) * (px - ox) + math.cos(angle) * (py - oy)
+        return qx, qy
+
+    """ Culled from an unsuccessful attempt at rotation in rotate_xy
+            '''
+        ### Don't know where I went wrong with this
+        ### but I gave up and used a slick version from Stackoverflow
+        ### with a modification for downward increasing y
+        if deg is None:
+            deg = self.mapRotate
+        effective_zero = 1e-7
+        if deg is not None and deg > effective_zero:
+            theta = deg2rad(deg)         # Rotate to North Facing
+            # Translate to center of image
+            x_c = x - width/2.
+            y_c = y - height/2.
+            x2_c = x_c * cos(theta) - y_c * sin(theta)
+            y2_c = y_c * cos(theta) + x_c * sin(theta)
+            x2 = x2_c + width /2.
+            y2 = y2_c + height/2.
+           
+            x = x2
+            y = y2
+            
+        return x,y
+    """
+
             
     def posToPixel(self, pos):
         """
@@ -1269,7 +1406,7 @@ class GeoDraw:
         """
                 
         if deg is not None and theta is not None:
-            raise GMIError("Only one of deg or theta must be specified")
+            raise SelectError("Only one of deg or theta must be specified")
         if theta is not None:
             deg = theta / pi * 180
         if deg is None:
@@ -1363,81 +1500,246 @@ class GeoDraw:
         
         
 if __name__ == "__main__":
-    import os
-    import sys
-    print("%s %s\n" % (os.path.basename(sys.argv[0]), " ".join(sys.argv[1:])))
-    # A small box
-    im = Image.new("RGB", (400, 400))    
-    fieldlen = 100            # Box side length in meters
-    box_lrLatLong = (42., -71.000)
-    p1 = box_lrLatLong
-    p2 = geoMove(latLong=p1, latDist=0,       longDist=fieldlen)
-    p3 = geoMove(latLong=p1, latDist=-fieldlen, longDist=fieldlen)
-    p4 = geoMove(latLong=p1, latDist=-fieldlen, longDist=0)
-    print("Testing placement against geoDistance")
-    print("p2-p1=%.3f p3-p2=%.3f p4-p3=%.3f p4-p1=%.3f" %
-          (geoDistance(latLong=p2, latLong2=p1),
-            geoDistance(latLong=p3, latLong2=p2),
-            geoDistance(latLong=p4, latLong2=p3),
-            geoDistance(latLong=p1, latLong2=p4)))
-    gd = GeoDraw(im, ulLat=p1[0], ulLong=p1[1], lrLat=p3[0], lrLong=p3[1])
-    print("image width=%d height=%d" % (gd.getWidth(), gd.getHeight()))
-    borderP = 0
-    boxlen = fieldlen/4.
-    p5_offset = boxlen + 5
-    p5 = geoMove(latLong=p1, latDist=p5_offset,      longDist=p5_offset)
-    p6 = geoMove(latLong=p5, latDist=boxlen,       longDist=boxlen)
-    p7 = geoMove(latLong=p5, latDist=-boxlen, longDist=boxlen)
-    p8 = geoMove(latLong=p5, latDist=-boxlen, longDist=0)
-    print("boxlen=%.3f meters, ul:%s lr:%s" % (boxlen, gd.getXY(latLong=p5), gd.getXY(latLong=p7)))
+    from select_trace import SlTrace
     
-    points = [p5, p6, p7, p8, p5]
-    print("points: %s" % repr(points))
-    
-    blue = (0,0,255)
-    for n, point in enumerate(points, 1):
-        radius = gd.meterToMx(boxlen/10.)
-        px, py = gd.getXY(latLong=point)
-        dx, dy = gd.getPos(latLong=point)
-        gd.circle(latLong=point, radius=radius, fill=blue)
-        print("%d: circle at:x,y(%s), longLat(%s), dx,dy(%s) radius=%f" %
-               (n, (px,py), point, (dx,dy), radius))
+    def lines_test():
+        # A small box
+        im = Image.new("RGB", (400, 400))    
+        fieldlen = 100            # Box side length in meters
+        """
+        p1        p2
         
-    im.show()
+        
+        
+        p4        p3
+        """
+        box_lrLatLong = (42., -71.000)
+        p1 = box_lrLatLong
+        p2 = geoMove(latLong=p1, latDist=0,       longDist=fieldlen)
+        p3 = geoMove(latLong=p1, latDist=-fieldlen, longDist=fieldlen)
+        p4 = geoMove(latLong=p1, latDist=-fieldlen, longDist=0)
+        print("Testing placement against geoDistance")
+        print("p2-p1=%.3f p3-p2=%.3f p4-p3=%.3f p4-p1=%.3f" %
+              (geoDistance(latLong=p2, latLong2=p1),
+                geoDistance(latLong=p3, latLong2=p2),
+                geoDistance(latLong=p4, latLong2=p3),
+                geoDistance(latLong=p1, latLong2=p4)))
+        gd = GeoDraw(im, ulLat=p1[0], ulLong=p1[1], lrLat=p3[0], lrLong=p3[1])
+        print("image width=%d height=%d" % (gd.getWidth(), gd.getHeight()))
+        borderP = 0
+        boxlen = fieldlen/4.
+        p5_offset = boxlen + 5
+        p5 = geoMove(latLong=p1, latDist=p5_offset,      longDist=p5_offset)
+        p6 = geoMove(latLong=p5, latDist=boxlen,       longDist=boxlen)
+        p7 = geoMove(latLong=p5, latDist=-boxlen, longDist=boxlen)
+        p8 = geoMove(latLong=p5, latDist=-boxlen, longDist=0)
+        print("boxlen=%.3f meters, ul:%s lr:%s" % (boxlen, gd.getXY(latLong=p5), gd.getXY(latLong=p7)))
+        
+        points = [p5, p6, p7, p8, p5]
+        print("points: %s" % repr(points))
+        
+        blue = (0,0,255)
+        for n, point in enumerate(points, 1):
+            radius = gd.meterToMx(boxlen/10.)
+            px, py = gd.getXY(latLong=point)
+            dx, dy = gd.getPos(latLong=point)
+            gd.circle(latLong=point, radius=radius, fill=blue)
+            print("%d: circle at:x,y(%s), longLat(%s), dx,dy(%s) radius=%f" %
+                   (n, (px,py), point, (dx,dy), radius))
+            
+        im.show()
+        
+        rotate = 0
+        print("\n\nboundLatLong for rotate=%.0f" % rotate)
+        bd = GeoDraw.boundLatLong(points, mapRotate=rotate, borderP=borderP)
+        print("rotate %.0f: bound: %s" % (rotate, bd))
+        rotate = 1
+        print("\n\nboundLatLong for rotate=%.0f" % rotate)
+        bd = GeoDraw.boundLatLong(points, mapRotate=rotate, borderP=borderP)
+        print("rotate %.0f: bound: %s" % (rotate, bd))
+        rotate = 45
+        print("\n\nboundLatLong for rotate=%.0f" % rotate)
+        bd = GeoDraw.boundLatLong(points, mapRotate=rotate, borderP=borderP)
+        print("rotate %.0f: bound: %s" % (rotate, bd))
+        rotate = 90
+        print("\n\nboundLatLong for rotate=%.0f" % rotate)
+        bd = GeoDraw.boundLatLong(points, mapRotate=rotate, borderP=borderP)
+        print("rotate %.0f: bound: %s" % (rotate, bd))
+        rotate = 180
+        print("\n\nboundLatLong for rotate=%.0f" % rotate)
+        bd = GeoDraw.boundLatLong(points, mapRotate=rotate, borderP=borderP)
+        print("rotate %.0f: bound: %s" % (rotate, bd))
+        
+        width = gd.getWidth()
+        height = gd.getHeight() 
+        gd.setCurLoc(xY=(width/3., height/2))
+        gd.lineSeg(leng=width/2, fill=(255,0,0))
+        gd.lineSeg(leng=width/2, deg= -22.5, fill=(0,255,0))
+        gd.lineSeg(leng=width/2, deg= -45, width=5, fill=(0,0,255))
+        gd.lineSeg(pos=(0, 0), leng=width/2, deg= -77.5, width=10, fill=(255,255,0))
+        gd.setCurLoc(xY=(width*.75, height*.25))
+        gd.line([(width*.8, height*.40),
+                 (width*.9, height*.50),
+                 (width*.95, height*.60)
+                ],
+                fill=(0,255,255))
+        gd.image.show()
     
-    rotate = 0
-    print("\n\nboundLatLong for rotate=%.0f" % rotate)
-    bd = GeoDraw.boundLatLong(points, mapRotate=rotate, borderP=borderP)
-    print("rotate %.0f: bound: %s" % (rotate, bd))
-    rotate = 1
-    print("\n\nboundLatLong for rotate=%.0f" % rotate)
-    bd = GeoDraw.boundLatLong(points, mapRotate=rotate, borderP=borderP)
-    print("rotate %.0f: bound: %s" % (rotate, bd))
-    rotate = 45
-    print("\n\nboundLatLong for rotate=%.0f" % rotate)
-    bd = GeoDraw.boundLatLong(points, mapRotate=rotate, borderP=borderP)
-    print("rotate %.0f: bound: %s" % (rotate, bd))
-    rotate = 90
-    print("\n\nboundLatLong for rotate=%.0f" % rotate)
-    bd = GeoDraw.boundLatLong(points, mapRotate=rotate, borderP=borderP)
-    print("rotate %.0f: bound: %s" % (rotate, bd))
-    rotate = 180
-    print("\n\nboundLatLong for rotate=%.0f" % rotate)
-    bd = GeoDraw.boundLatLong(points, mapRotate=rotate, borderP=borderP)
-    print("rotate %.0f: bound: %s" % (rotate, bd))
+    def close(p1,p2, dist=1.E-15):
+        """ Check if point close
+        :p1,p2: points (x,y)
+        :dist: distance for close
+
+        """
+        dp2 = (p1[0]-p2[0])**2 + (p1[1]-p2[1])**2
+        if dp2 < dist**2:
+            return True
+        
+        return False
     
-    width = gd.getWidth()
-    height = gd.getHeight() 
-    gd.setCurLoc(xY=(width/3., height/2))
-    gd.lineSeg(leng=width/2, fill=(255,0,0))
-    gd.lineSeg(leng=width/2, deg= -22.5, fill=(0,255,0))
-    gd.lineSeg(leng=width/2, deg= -45, width=5, fill=(0,0,255))
-    gd.lineSeg(pos=(0, 0), leng=width/2, deg= -77.5, width=10, fill=(255,255,0))
-    gd.setCurLoc(xY=(width*.75, height*.25))
-    gd.line([(width*.8, height*.40),
-             (width*.9, height*.50),
-             (width*.95, height*.60)
-            ],
-            fill=(0,255,255))
-    gd.image.show()
+    def rotate_xy_test():
+        npass = 0
+        nfail = 0
+        ntest = 0
+        mapRotate = 0.
+        w = 300.
+        h = 400.
+        im = Image.new("RGB", (int(w), int(h)))    
+        gd = GeoDraw(im, mapRotate=mapRotate,
+                ulLat=None, ulLong=None,    # Bounding box
+                lrLat=None, lrLong=None,
+                      ulX=0, ulY=0, lrX=w, lrY=h)
+        f_fmt = "10.6f"
+        for i in range(0, 6+1):
+            x1 = i*50.
+            for j in range(0, 4+1):
+                y1 = j*100.
+                for k in range(0, 8+1):
+                    deg = k*45.
+                    x2, y2 = gd.rotate_xy(x=x1, y=y1,
+                                           width=gd.getWidth(),
+                                           height=gd.getHeight(), deg=deg)
+                    SlTrace.lg(f"{deg:5.1f}"
+                               f" x1: {x1:{f_fmt}} y1: {y1:{f_fmt}}"
+                               f"  x2: {x2:{f_fmt}} y2: {y2:{f_fmt}}")
+                    if (x1,y1) == (w/2, 0):
+                        if deg == 45.:
+                            ntest += 1
+                            theta = radians(deg)
+                            x_shrink = h/2/sqrt(2)
+                            y_shrink = h/2/sqrt(2)
+                            x2_expect = w/2 - x_shrink
+                            y2_expect = h/2 - y_shrink
+                            if not close((x2,y2), (x2_expect, y2_expect)):
+                                nfail += 1
+                                SlTrace.lg(f" FAIL: (x2: {x2:{f_fmt}}, y2: {y2:{f_fmt}})"
+                                           f" != (x2_expect: {x2_expect:{f_fmt}},"
+                                           f" y2_expect: {y2_expect:{f_fmt}})")
+                            else:
+                                npass += 1
+                                SlTrace.lg(f" PASS: (x2: {x2}, y2: {y2})"
+                                           f" == (x2_expect: {x2_expect}, y2_expect: {y2_expect})")
+                        if deg == 90.:
+                            ntest += 1
+                            if not close((x2,y2), ((w-h)/2, h/2)):
+                                nfail += 1
+                                SlTrace.lg(f" FAIL: (x2: {x2}, y2: {y2})"
+                                           f" != ((w-h)/2: {(w-h)/2}, h/2: {h/2})")
+                            else:
+                                npass += 1
+                                SlTrace.lg(f" PASS: (x2: {x2}, y2: {y2})"
+                                           f" == ((w-h)/2: {(w-h)/2}, h/2: {h/2})")
+        SlTrace.lg(f"{ntest:4d} tests  {npass:4d} pass  {nfail:4d} fail")
+    
+    def rotate_lat_long_test():
+        npass = 0
+        nfail = 0
+        ntest = 0
+        mapRotate = 0.
+        fieldlen = 100            # Box side length in meters
+        """
+        p1        p2
+        
+        
+        
+        p4        p3
+        """
+        box_lrLatLong = (42., -71.000)
+        p1 = box_lrLatLong
+        p2 = geoMove(latLong=p1, latDist=0,       longDist=fieldlen)
+        p3 = geoMove(latLong=p1, latDist=-fieldlen, longDist=fieldlen)
+        p4 = geoMove(latLong=p1, latDist=-fieldlen, longDist=0)
+        w = fieldlen
+        h = fieldlen
+        ll_fmt = ".7f"
+        f_fmt = "6.3f"
+        px_fmt = "4.0f"
+
+        ck_reverse = False                  # True to ck reverse
+        ck_reverse = True 
+        
+        im = Image.new("RGB", (int(w), int(h)))    
+        gd = GeoDraw(im, mapRotate=mapRotate,
+                      ulLat=p1[0], ulLong=p1[1],
+                      lrLat=p3[0], lrLong=p3[1])
+        SlTrace.lg(f"mapRotate: {gd.mapRotate:.1f} degrees")
+        for n, pt in enumerate([p1,p2,p3,p4], 1):
+            lat, long = pt
+            x, y = gd.latLongToPixel((lat, long))
+            stat_line = str(f"p{n}: lat: {lat:{ll_fmt}} long: {long:{ll_fmt}}"
+                       f"    x: {x:{px_fmt}} y: {y:{px_fmt}} ")
+            if ck_reverse:
+                lat2, long2 = gd.pixelToLatLong((x,y))
+                
+                stat_line += f"  lat2: {lat2:{ll_fmt}} long2: {long2:{ll_fmt}}"
+                ntest += 1
+                if close((lat,long), (lat2,long2)):
+                    stat_line += " Pass"
+                    npass += 1
+                else:
+                    stat_line += " Fail"
+                    nfail += 1
+
+            SlTrace.lg(stat_line)
+        lat_height = gd.lrLat - gd.ulLat
+        long_width = gd.lrLong - gd.ulLong
+        lat_base = p1[0]
+        long_base = p1[1]
+        lat_mid = (lat_base-lat_height/2)
+        long_mid = long_base + long_width/2
+        for i in range(0, 6+1):
+            for j in range(0, 4+1):         # Moving down, decreasing latitude
+                lat1, long1 = geoMove(p1, latDist=-j*fieldlen/4, longDist=i*fieldlen/6)
+                for k in range(0, 8+1):
+                    ###for k in range(1):
+                    deg = k*45.
+                    x2, y2 = gd.latLongToPixel((lat1, long1))
+                    stat_line = str(f"{deg:5.1f}"
+                               f" lat1: {lat1:{ll_fmt}}  long1: {long1:{ll_fmt}}"
+                               f"  x2: {x2:{px_fmt}}     y2: {y2:{px_fmt}}")
+                    if ck_reverse:
+                        lat2, long2 = gd.pixelToLatLong((x2,y2))
+                        stat_line += f"  lat2: {lat2:{ll_fmt}} long2: {long2:{ll_fmt}}"
+                        ntest += 1
+                        if close((lat1,long1), (lat2,long2)):
+                            stat_line += " Pass"
+                            npass += 1
+                        else:
+                            stat_line += " Fail"
+                            nfail += 1
+                    SlTrace.lg(stat_line)
+        SlTrace.lg(f"{ntest:4d} tests  {npass:4d} pass  {nfail:4d} fail")
+        
+    do_lines_test = False
+    if do_lines_test:
+        lines_test()
+    
+    do_rotate_xy_test = True
+    do_rotate_xy_test = False
+    if do_rotate_xy_test:
+        rotate_xy_test()
+
+    do_rotate_lat_long_test = True
+    if do_rotate_lat_long_test:
+        rotate_lat_long_test()
     

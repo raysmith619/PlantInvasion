@@ -6,6 +6,7 @@ Provides an updated positioning information of the points relation
 from tkinter import *
 from math import sqrt
 
+from select_trace import SlTrace
 from canvas_coords import CanvasCoords
 
 class PointPlaceTwo(Toplevel):
@@ -162,6 +163,9 @@ class PointPlaceTwo(Toplevel):
         self.connection_line_color=connection_line_color
         self.display_monitor = display_monitor
         
+        if display_monitor:
+            self.setup_display_monitor()
+        
         if self.point1 is not None and self.point2 is not None:
             self.set_ctl_val("point1_name", self.point1.label)
             self.point1.add_tracker(self.point1_moved)
@@ -173,11 +177,11 @@ class PointPlaceTwo(Toplevel):
         elif self.gmi is not None:
             lat_long = self.gmi.getCenter()
             self.set_lat_long(lat_long) 
-        
-        if display_monitor:
-            self.setup_display_monitor()
     
     def setup_display_monitor(self):
+        """ Setup the two point tracking monitor window
+        Called if and when a display monitor window is desired
+        """
         if self.parent is None:
             parent = Tk()
             ###parent.withdraw()
@@ -503,7 +507,8 @@ class PointPlaceTwo(Toplevel):
         setattr(self, field, val)               # Set internal value
         if not self.display_monitor:
             return
-        
+        if field not in self.ctls_vars:
+            SlTrace.lg(f"ctls_vars:{', '.join(self.ctls_vars.keys())}")
         ctl_var = self.ctls_vars[field]         # Not updating the display
         if hasattr(self, "lat"):
             ctl_var.set(str(self.lat))          # Not updating the display

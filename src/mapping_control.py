@@ -26,6 +26,7 @@ class FavoriteAddress:
                  latitude=None, longitude=None,
                  width=None, height=None, xOffset=None, yOffset=None,
                  maptype=None,
+                 mapRotate=None,
                  zoom=None, show="name", unit="meter"):
         """ Favorite item:
         :name: item descriptive name <file:...> image
@@ -44,7 +45,8 @@ class FavoriteAddress:
         
         self.name=name
         self.address = address
-        self.maptype = maptype 
+        self.maptype = maptype
+        self.mapRotate = mapRotate 
         self.latitude = latitude
         self.longitude = longitude
         self.width = width
@@ -68,6 +70,7 @@ class MappingControl(SelectControlWindow):
         ("name", "address.name"),
         ("address", "address.address"),
         ("maptype", "map.maptype"),
+        ("mapRotate", "map.rotate"),
         ("latitude", "lat_long.latitude"),
         ("longitude", "lat_long.longitude"),
         ("zoom", "lat_long.zoom"),
@@ -100,6 +103,7 @@ class MappingControl(SelectControlWindow):
                  zipcode="",
                  country="",
                  maptype="hybrid",
+                 mapRotate=0.,
                  longitude=0.,      # Set float type
                  latitude=0.,       # Set float type
                  zoom=22,
@@ -133,6 +137,7 @@ class MappingControl(SelectControlWindow):
         self.zipcode = zipcode
         self.country = country
         self.maptype = maptype
+        self.mapRotate = mapRotate
         self.latitude = latitude
         self.longitude = longitude
         self.width = width
@@ -241,6 +246,11 @@ class MappingControl(SelectControlWindow):
         self.set_radio_button(frame=map_frame, field="maptype", label="satellite", command=self.change_maptype)
         self.set_radio_button(frame=map_frame, field="maptype", label="hybrid", command=self.change_maptype)
         self.set_radio_button(frame=map_frame, field="maptype", label="terrain", command=self.change_maptype)
+        if self.mapRotate is None:
+            map_rotate = 0.0
+        else:
+            map_rotate = self.mapRotation
+        self.set_entry(field="rotate", label="Rotation", value=map_rotate, width=6)
        
         latitude_longitude_frame = Frame(location_frame)
         self.set_vert_sep(location_frame, text="")
@@ -310,7 +320,9 @@ class MappingControl(SelectControlWindow):
                                          xOffset=self.xOffset, yOffset=self.yOffset,
                                          unit=self.unit,
                                          maptype=self.maptype,
+                                         mapRotate=self.mapRotate,
                                          zoom=self.zoom)
+        self.mgr.redisplay()       # Resets points, trackings display
         self.update()       # Force visual update
         self.mgr.sc.size_image_to_canvas()
         fav =  self.get_favorite_from_ctl()
@@ -486,6 +498,7 @@ class MappingControl(SelectControlWindow):
         self.unit = self.get_val_from_ctl("distance_units.unit")
         self.latitude = self.get_val_from_ctl("lat_long.latitude")
         self.longitude = self.get_val_from_ctl("lat_long.longitude")
+        self.mapRotate = self.get_val_from_ctl("map.rotate")
         self.zoom = self.get_val_from_ctl("lat_long.zoom")
     
     def destroy(self):

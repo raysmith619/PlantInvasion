@@ -6,7 +6,9 @@
 import os
 import sys
 import re
-from tkinter import *
+from math import sqrt
+from tkinter import font
+
 from tkinter.filedialog import asksaveasfilename
 
 from select_trace import SlTrace
@@ -19,6 +21,8 @@ from tracking_control import TrackingControl
 from canvas_coords import CanvasCoords
 from GoogleMapImage import GoogleMapImage
 import scrolled_canvas
+from compass_rose import CompassRose
+
 
 class PointSelection:
     def __init__(self, point_list=None, name=None, title=None):
@@ -80,6 +84,7 @@ class SurveyPointManager:
                        
         self.sc = scanvas
         self.trailfile = trailfile
+        self.compass_rose = CompassRose(present=False)    
         self.trail = None                   # Currently loaded trail
         self.trail_segment = None           # Currently processed trail segment
         self.mapped_regions = []            # canvases of regions displayed
@@ -181,8 +186,11 @@ class SurveyPointManager:
         sc_base = self.sc
         zoom = min(gmi_base.zoom+2, 22)
         title = "Region bounded by " + ", ".join([pt.label for pt in region_pts])
+        region_bearing = region.get_bearing()
+        SlTrace.lg(f"Region bearing: {region_bearing}")
         region_gmi = GoogleMapImage(ulLat=max_lat, ulLong=min_long,
                            lrLat=min_lat, lrLong=max_long,
+                           mapRotate=region_bearing,
                            zoom=zoom)
         region_sc = scrolled_canvas.ScrolledCanvas(title=title,
                             pt_mgr=self,          # All with common pt_mgr
@@ -202,14 +210,83 @@ class SurveyPointManager:
             trail_points = gpx.get_points()
             inside_points = region.get_inside_points(trail_points)
             trail_selection.inside_points = inside_points
-            region_sc.gmi.addTrail(points=trail_points, title=None)
+            region_sc.gmi.addTrail(gpx, title=None)
+        SlTrace.lg(f"Region bearing: {region_bearing:.2f}")
 
         region_sc.set_size()
         region_sc.lower_image()        # Place map below points/lines
 
         region_sc.size_image_to_canvas()
         return True
-                      
+
+    def rotate_map(self):
+        """ Interactively rotate map in main display
+        """
+        mr = MapRotator(self)
+            
+    def select_region(self):
+        """ select most recently created region, if one
+        """
+        region = self.get_region()
+        if region is None:
+            SlTrace.report("No region selected")
+            return False
+        
+        if not region.is_complete():
+            SlTrace.report(f"Region is not complete")
+            return False
+        region_pts = region.get_points()
+        min_lat, max_lat, min_long, max_long = region.min_max_ll()
+        gmi_base = self.sc.gmi
+        sc_base = self.sc
+        title = "Region bounded by " + ", ".join([pt.label for pt in region_pts])
+        region_bearing = region.get_bearing()
+        SlTrace.lg(f"Region bearing: {region_bearing}")
+        region_gmi = GoogleMapImage(gmi=gmi_base,
+                            ulLat=max_lat, ulLong=min_long,
+                            lrLat=min_lat, lrLong=max_long,
+                            mapRotate=region_bearing)
+        region_sc = scrolled_canvas.ScrolledCanvas(title=title,
+                            pt_mgr=self,          # All with common pt_mgr
+                            map_ctl=sc_base.map_ctl,
+                            gmi=region_gmi, 
+                            width=sc_base.width, height=sc_base.height)
+        if not gmi_base.has_compass_rose():
+            region_gmi.addCompassRose()       # Paste in to its image
+        self.mapped_regions.append(region_sc)
+        sample_selection = self.get_point_list("samples")
+        if sample_selection is not None:
+            spx = sample_selection.point_list
+            region_sc.gmi.addSamples(points=spx.get_points(), title="")
+
+        trail_selection = self.get_point_list("trails")
+        if trail_selection is not None:
+            gpx = trail_selection.point_list
+            title = trail_selection.title
+            trail_points = gpx.get_points()
+            inside_points = region.get_inside_points(trail_points)
+            trail_selection.inside_points = inside_points
+            region_sc.gmi.addTrail(gpx, title=None)
+        SlTrace.lg(f"Region bearing: {region_bearing:.2f}")
+
+        region_sc.set_size()
+        region_sc.lower_image()        # Place map below points/lines
+
+        region_sc.size_image_to_canvas()
+        return True
+
+    def use_region(self):
+        """ Use the selected region(viewed) as the main map
+        """
+        if len(self.mapped_regions) < 1:
+            return self.sc              # No change
+        
+        SlTrace.lg("Using most recently selected/mapped region")        
+        region_sc = self.mapped_regions[-1]
+        self.sc.gmi = region_sc.gmi
+        self.sc.pt_mgr = region_sc.pt_mgr
+        self.sc.pt_mgr.redisplay()
+                              
     def mouse_down(self, canvas_x, canvas_y):
         """ Capture/process mouse clicks in canvas
         :canvas_x: canvas x-coordinate
@@ -231,6 +308,7 @@ class SurveyPointManager:
         :long: longitude
         :returns: point (SurveyPoint)
         """
+        
         return self.tr_ctl.make_point(lat=lat, long=long)
     
     def mouse_double_down(self, canvas_x, canvas_y):
@@ -380,6 +458,35 @@ class SurveyPointManager:
             self.tr_ctl.trail = None        # Synchronize with tracking
             self.tr_ctl.trail_segment = None
             
+    def save_map_file(self, mapfile=None):
+        """ Save updated map file
+        :mapfile: trail file name
+                default: ask for name
+        """
+        gmi = self.get_gmi()
+        if gmi is None:
+            return
+        map_name = gmi.get_filename()
+        
+        initialfile = os.path.basename(map_name)
+        if mapfile is None:
+            mapfile = asksaveasfilename(
+                initialdir= "../new_data",
+                initialfile=initialfile,
+                title = "New Map File",
+                filetypes= (("Map files", "*.png"),
+                            ("all files", "*.*"))
+                           )
+            if mapfile is None:
+                SlTrace.report(f"No file selected")
+                return False
+            
+        if os.path.exists(mapfile):
+            SlTrace.report(f"File {mapfile} already exists")
+        
+        self.set_image()            # Set image updated  with overlays
+        gmi.save(mapfile)   
+            
     def save_trail_file(self, trailfile=None):
         """ Save updated trail file (From get_point_list("trails")
         :trailfile: trail file name
@@ -406,7 +513,13 @@ class SurveyPointManager:
             SlTrace.report(f"File {trailfile} already exists")
         
         trail.save_file(trailfile)   
-        
+
+    def set_image(self):
+        """ Set image, in preparation to save completed graphics file
+        In genera, copy objects like trails which are canvas based objects to
+        the image
+        """
+        self.sc.set_image()
 
     def get_canvas(self):
         """ Get Canvas type object
@@ -456,7 +569,107 @@ class SurveyPointManager:
                 
         return points_in
 
+            
+    def overlayCompassRose(self, compassRose):
+        """
+        Add orientation marker
+        Like GeoDraw.add..., but overlay, to allow modification
+        Stores canvas tags in self.compass_rose_tags
+        :returns: list of tags created
+        :compassRose: (x_fract, y_fract, len_fract) of x,y, length(smallest)
+        """
+        SlTrace.lg("addCompassRose")
+        gmi = self.get_gmi()
+        canvas = self.get_canvas()
+        if self.compass_rose.present and self.compass_rose.tags:
+            self.canvas.delete(self.compas_rose.tags)
+            self.compas_rose.tags = []
+        if compassRose is not None:
+            self.compass_rose = CompassRose(x_fract = compassRose[0],
+                                            y_fract = compassRose[1],
+                                            len_fract = compassRose[2],
+                                            present=True)
+        cro = self.compass_rose
+        xFraction = cro.x_fract
+        yFraction = cro.y_fract
+        lenFraction = cro.len_ftact
+        mx = gmi.getWidth() * xFraction
+        my = gmi.getHeight() * yFraction
+        arrow_len = sqrt(gmi.getWidth()**2 + gmi.getHeight()**2) * lenFraction
+        cent_color = (255,0,0)
+        xY = (mx,my)
+        gmi.circle(xY=xY, radius=5, fill=cent_color)
+        north_deg = 90.     # Default map north
+        arrow_color = (100,255,100, 126)
+        arrow_width = gmi.adjWidthBySize(4)
+        tag = self.lineSeg(xY=xY, leng=arrow_len, deg=north_deg, fill=arrow_color, width=arrow_width)
+        cro.tags.append(tag)
+        arrow_point_xy = gmi.addToPoint(xY=xY, leng=arrow_len, deg=north_deg)
+        arrow_head_width = int(1.2*arrow_width)
+        head_len = arrow_len/5.
+        left_edge_deg = north_deg-20. - 180.
+        tag = self.lineSeg(xY=arrow_point_xy, leng=head_len, deg=left_edge_deg,
+                      fill=arrow_color, width=arrow_head_width)
+        cro.tags.append(tag)
+        right_edge_deg = north_deg+20. - 180.
+        tag = self.lineSeg(xY=arrow_point_xy, leng=head_len, deg=right_edge_deg,
+                      fill=arrow_color, width=arrow_head_width)
+        cro.tags.append(tag)
+        # North Label
+        label_size = 16
+        north_label_font = font.Font("Helvetica", size=label_size)
+        label_pt = gmi.addToPoint(xY=arrow_point_xy, leng=label_size+10, deg=north_deg)
 
+        tag = self.text("North", xY=label_pt, font=north_label_font, fill=arrow_color)
+        cro.tags.append(tag)
+
+
+    def text(self, text, xY=None,pos=None,latLong=None, **kwargs):
+        """
+        Draw text, at position, defaulting to current pen position
+        like GeoDraw, but overlay
+        :returns: list of canvas tags
+        """
+        canvas = self.get_canvas()
+        gmi = self.get_gmi()
+        xY = gmi.getXY(xY=xY, pos=pos, latLong=latLong)
+        x_image, y_image = xY
+        p1c = self.get_canvas_coords(x_image=x_image, y_image=y_image)
+        tag = canvas.create_text(p1c.canvas_x, p1c.canvas_y,
+                                 text=text, **kwargs)
+        return tag
+ 
+    def lineSeg(self, xY=None, pos=None, latLong=None,
+                xY2=None, pos2=None, latLong2=None,
+                 leng=10, theta=None, deg=None, **kwargs):
+        """
+        Like GeoDraw but overlay
+        :xY: x_image, y_image
+        Draw line segment starting at given point
+        position(xY or pos or latLong) and going to 
+            2nd point:
+                (xY2 or pos2 or latLong2)
+                    or
+                point 2 plus length leng at angle (theta radians or deg degrees)
+            
+        Extra named args are passed to Image.draw.line
+        :returns: list of canvas tags
+        """
+        canvas = self.get_canvas()
+        xY = self.getXY(xY=xY, pos=pos, latLong=latLong)
+        if xY2 is not None or pos2 is not None or latLong2 is not None:
+            new_xY = self.getXY(xY=xY2, pos=pos2, latLong=latLong2)
+        else:
+            new_xY = self.addToPoint(leng=leng, xY=xY, theta=theta, deg=deg)
+        x_image, y_image = xY
+        p1c = self.get_canvas_coords(x_image=x_image, y_image=y_image)
+        x_image2, y_image2 = new_xY
+        p2c = self.get_canvas_coords(x_image=x_image2, y_image=y_image2)
+        tag = canvas.create_line(
+                p1c.canvas_x, p1c.canvas_y, p2c.canvas_x, p2c.canvas_y,
+                **kwargs)
+        return tag
+    
     def overlayTitle(self, title, xY=None, size=None, color=None, **kwargs):
         """ Like GeoDraw.addTitle, but overlay, to allow modification
         """
@@ -508,7 +721,7 @@ class SurveyPointManager:
             self.overlayTitle(self.trail_title, xY=title_xy)
         self.trail_width = 2.       # Trail width in meters
         self.max_dist_allowed = 150.
-        line_width = int(self.meterToPixel(self.trail_width))
+        line_width = int(self.meterToCanvasPixel(self.trail_width))
         prev_point = None
         for track in trail.get_segments():
             track_points = track.get_points()
@@ -551,6 +764,11 @@ class SurveyPointManager:
 
     def get_gmi(self):
         return self.sc.gmi
+
+    def get_canvas_coords(self, **kwargs):
+        """ Shorthand to get CanvasCoords
+        """
+        return CanvasCoords(self.sc, **kwargs)
     
     def getHeight(self):
         """ via GoogleMapImage
@@ -564,6 +782,17 @@ class SurveyPointManager:
         gmi = self.get_gmi()
         return gmi.getWidth()
 
+    def meterToCanvasPixel(self, meter, min=2):
+        """ Convert, as best we can, meter dimension, into canvas pixel
+        for drawing
+        :meter: length in meters
+        :returns: canvas length min: 1
+        """
+        pc = self.get_canvas_coords(x_dist=meter, y_dist=0, unit="m")
+        canvas_len = pc.canvas_x
+        if canvas_len < min:
+            canvas_len = min
+        return canvas_len
     def meterToPixel(self, meter):
         """ via GoogleMapImage
         """
@@ -584,6 +813,20 @@ class SurveyPointManager:
         """
         self.tr_ctl.show_point_tracking(point)  # In case changed
         point.display(displayed=True)
+
+    def show_point_tracking(self, *points):
+        """ Display/redisplay tracking items/lines
+        for points given.
+        :ponts: zero or more args, each of which is a point or list of points
+        """
+        self.tr_ctl.show_point_tracking(*points)
+
+    def hide_point_tracking(self, *points):
+        """ Hide  tracking items/lines
+        for points given.
+        :ponts: zero or more args, each of which is a point or list of points
+        """
+        self.tr_ctl.hide_point_tracking(*points)
 
     def remove_point(self, point):
         """ Remove point, and any associated tracking
