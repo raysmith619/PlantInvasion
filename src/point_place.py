@@ -72,8 +72,6 @@ class PointPlace(Toplevel):
     COL_SNAP_SHOT = COL_POINT_NAME + 2
     
     def __init__(self, sc=None, parent=None, title=None,
-                 position=None,
-                 size=None,
                  point=None,
                  lat_long=None,
                  track_sc=False,
@@ -387,12 +385,15 @@ class PointPlace(Toplevel):
         :lat: latitude, default=use current (self.lat)
         :long: longitude default=use current (self.long
         """
+        if self.point is None:
+            return
+        
         if lat is not None:
-            self.lat = lat
+            self.point.lat = lat
         if long is not None:
-            self.long = long
-        lat = self.lat
-        long = self.long
+            self.point.long = long
+        lat = self.point.lat
+        long = self.point.long
         if self.sc.gmi is None:
             return
         
@@ -443,7 +444,7 @@ class PointPlace(Toplevel):
         if self.connection_line_tag is not None:
             canvas.delete(self.connection_line_tag)
         if self.standalone and self.mw is not None:
-            self.mw.destroy()
+            ###self.mw.destroy()        SELF.CHILDREN. - RECURSION LOOP
             self.mw = None
         
 if __name__ == "__main__":

@@ -17,9 +17,11 @@ import urllib.request, urllib.parse, urllib.error, io
 from select_trace import SlTrace
 from select_error import SelectError
 
-from GeoDraw import GeoDraw, geoDistance, geoMove, gDistance, geoUnitLen, minMaxLatLong
+from GeoDraw import GeoDraw, geoDistance, gDistance
+from GeoDraw import geoMove, geoUnitLen, minMaxLatLong
 from select_error import SelectError
 from APIkey import APIKey
+from compass_rose import CompassRose
 
 
 ###from msilib.schema import File
@@ -249,8 +251,7 @@ class GoogleMapImage:
                  enlargeForRotate=False,
                  maptype=None, zoom=None, scale=None,
                  add_compass_rose=True,
-                 compassRose=(-1,0),       # Place compass pointer, (-1) ==> none
-                                                    # x fraction, y fraction, length fraction
+                 compassRose=-1,
                  showSampleLL=True,                 # Show sample lat long
                  useOldFile=False,                  # Use existing image file even if code changed
                  xDim=None,                           # Dimension default, only if no lrLat
@@ -323,6 +324,9 @@ class GoogleMapImage:
                             info:  gmi_uLA-20..._png.imageinfo
         :unit: distance unit m,y,f,s default: m(eter)
         """
+        self.compass_rose = CompassRose(compassRose).live_obj()
+        fmt_ll = ".6f"
+        fmt_dist = ".1f"
         self.base_gmi = gmi
         self.unit = unit
         self.displayRotateChange = displayRotateChange
@@ -336,12 +340,6 @@ class GoogleMapImage:
             raise SelectError("Use only one of ullat... or mapPoints")
         self.mapPoints = mapPoints
         self.add_compass_rose = add_compass_rose
-        if not add_compass_rose:
-            self.compassRose = None
-        else:
-            if compassRose is not None and compassRose[0] < 0:
-                compassRose = None                      # -1 -- None
-        self.compassRose = compassRose
         self.showSampleLL = showSampleLL
         if maptype is None:
             maptype = 'hybrid'
@@ -378,8 +376,10 @@ class GoogleMapImage:
                                                        borderM=mapBorderM,
                                                        borderD=mapBorderD,
                                                        borderP=mapBorderP)
-                display_ulLatLong = ulLatLong
-                display_lrLatLong = lrLatLong
+                self.display_ulLat = ulLat
+                self.display_ulLong = ulLong
+                self.display_lrLat = lrLat
+                self.display_lrLong = lrLong
                 ulLat = ulLatLong[0]
                 ulLong = ulLatLong[1]
                 lrLat = lrLatLong[0]
@@ -400,7 +400,8 @@ class GoogleMapImage:
                     xOffset_m = xOffset/self.unitLen()
                     yOffset_m = yOffset/self.unitLen()
                     ulLat, ulLong = geoMove((ulLat,ulLong), latDist=-yOffset_m, longDist=xOffset_m)
-                    display_ulLatLong = ulLat, ulLong                    
+                    self.display_ulLat = ulLat
+                    self.display_ulLong = ulLong                    
                 if xDim is not None:
                     if yDim is None:
                         yDim = xDim
@@ -411,37 +412,44 @@ class GoogleMapImage:
                     latDist = -yDim/unitLen     # y increases downward, lat increases upward
                     longDist = xDim/unitLen     # x increases rightward, longitude increases(less negative) rightward
                     lrLat, lrLong = geoMove((ulLat,ulLong), latDist=latDist, longDist=longDist)
-                    display_lrLat = lrLat 
-                    display_lrLong = lrLong
+                    self.display_lrLat = lrLat 
+                    self.display_lrLong = lrLong
 
             centerLat = (ulLat+lrLat)/2
             centerLong =  (ulLong+lrLong)/2
             SlTrace.lg(f"Centered: {centerLat} latitude  {centerLong} Longitude")
             cc_dist = geoDistance(latLong=(ulLat, ulLong), latLong2=(lrLat, lrLong))
             lat_dist = (ulLat-lrLat)/2
+            lat_dist_m = geoDistance(latLong=(ulLat, ulLong), latLong2=(lrLat, ulLong))
             long_dist = (lrLong-ulLong)/2
+            min_lat = min(ulLat, lrLat)
+            long_dist_m = geoDistance(latLong=(min_lat,ulLong), latLong2=(min_lat, lrLong))
+            SlTrace.lg(f"Display area dimensions: height:{lat_dist_m:{fmt_dist}} m"
+                       f" , width:{long_dist_m:{fmt_dist}}")
             self.display_ulLat = ulLat
             self.display_ulLong = ulLong
             self.display_lrLat = lrLat 
             self.display_lrLong = lrLong
-            fmt_ll = ".6f"
             if enlargeForRotate:
                 SlTrace.lg(f"Before Enlargement for rotate lat dist {lat_dist:{fmt_ll}} long dist {long_dist:{fmt_ll}}")
                 SlTrace.lg("GogleMapImage: ulLat=%.5f ulLong=%.5f lrLat=%.5f lrLong=%.5f" %
                                     (ulLat, ulLong, lrLat, lrLong))
                 display_cc_dist = geoDistance(latLong=(ulLat, ulLong), latLong2=(lrLat, lrLong))
                 SlTrace.lg("            display corner to corner:= %.2f meters" % display_cc_dist)
-                enlarge_dist = sqrt(lat_dist**2+long_dist**2)
-                ulLat = centerLat + enlarge_dist/2
-                ulLong = centerLong - enlarge_dist/2
-                lrLat = centerLat - enlarge_dist/2
-                lrLong = centerLong + enlarge_dist/2
+                enlarge_dist = display_cc_dist*1.1
+                ulLat, ulLong = geoMove(latLong=(ulLat,ulLong),
+                                                latDist=(enlarge_dist-lat_dist_m)/2,
+                                                longDist=-(enlarge_dist-long_dist_m)/2)
+                lrLat, lrLong = geoMove(latLong=(lrLat,lrLong),
+                                                latDist=-(enlarge_dist-lat_dist_m)/2,
+                                                longDist=(enlarge_dist-long_dist_m)/2)
+                
                 cc_dist = geoDistance(latLong=(ulLat, ulLong), latLong2=(lrLat, lrLong))
-                SlTrace.lg(f"After Enlargement for rotate enlarge: {enlarge_dist:{fmt_ll}} deg")
-                SlTrace.lg(f"Change in diagonal distance: {cc_dist-display_cc_dist} meters")
+                SlTrace.lg(f"After Enlargement for rotate enlarge: {enlarge_dist:{fmt_dist}} meters")
+                SlTrace.lg(f"Change in diagonal distance: {enlarge_dist-display_cc_dist:{fmt_dist}} meters")
                 SlTrace.lg("Map changes: ulLat=%.5f ulLong=%.5f lrLat=%.5f lrLong=%.5f" %
                                     (ulLat-self.display_ulLat, ulLong-self.display_ulLong,
-                                      lrLat-self.display_lrLat, lrLong-display_lrLong))
+                                      lrLat-self.display_lrLat, lrLong-self.display_lrLong))
                 
             SlTrace.lg("GogleMapImage: ulLat=%.5f ulLong=%.5f lrLat=%.5f lrLong=%.5f" %
                                 (ulLat, ulLong, lrLat, lrLong))
@@ -479,8 +487,10 @@ class GoogleMapImage:
                                expandRotate=self.expandRotate,
                                unit=unit)
 
-        if self.add_compass_rose and self.compassRose is not None:
-            self.addCompassRose(self.compassRose)
+        if self.compass_rose is not None:
+            cr = self.compass_rose
+            pl = (cr.x_fract, cr.y_fract, cr.len_fract)
+            self.addCompassRose(pl)
 
     def get_filename(self):
         return self.file
@@ -504,8 +514,8 @@ class GoogleMapImage:
                                                         self.scale,
                                                         self.zoom,
                                                             self.maptype[0])
-        if self.mapRotate is not None:
-            base_name += "_mr%.0f" % self.mapRotate
+        if self.get_mapRotate() != 0:
+            base_name += "_mr%.0f" % self.get_mapRotate()
         base_name = base_name.replace('.', "_")
         base_name += ".png"                     # Default image file extension
         rel_path = os.path.join("..", "out", base_name)
@@ -604,6 +614,14 @@ class GoogleMapImage:
         """
         return self.geoDraw.getXY(latLong=latLong, pos=pos, xY=xY, unit=None)
 
+    def get_mapRotate(self):
+        """ Get current map rotation 0<= deg < 360
+        """
+        if not hasattr(self, "geoDraw"):
+            return self.mapRotate               # Only for pre-geoDraw setup
+        
+        return self.geoDraw.get_mapRotate()
+    
     def getPos(self, latLong=None, pos=None, xY=None, unit=None, ref_latLong=None):
         """
         Get/Convert location pixel, longitude, physical location/specification
@@ -698,7 +716,7 @@ class GoogleMapImage:
             self.imageInfo['ulLong'] = ulLong
             self.imageInfo['lrLat'] = lrLat
             self.imageInfo['lrLong'] = lrLong
-            self.imageInfo['mapRotate'] = self.mapRotate
+            self.imageInfo['mapRotate'] = self.get_mapRotate()
             SlTrace.lg("image width=%.2f height=%.2f" % (self.image.width, self.image.height))
             rotate = 0 if self.imageInfo['mapRotate'] is None else self.imageInfo['mapRotate']
             SlTrace.lg("File image: ulLat:%.6f ulLong %.6f lrLat:%.6f lrLong %.6f mapRotate %.0f" %
@@ -710,15 +728,15 @@ class GoogleMapImage:
         SlTrace.lg("image width=%.2f height=%.2f" % (self.image.width, self.image.height))
         
         # No need to change image
-        if self.mapRotate is not None and self.mapRotate != 0:
+        if self.get_mapRotate() != 0:
             ###self.displayRotateChange = True     # TFD
             if self.displayRotateChange:
                 self.dbShow("before rotate")
-            self.image = self.image.rotate(self.mapRotate, expand=self.expandRotate)
+            self.image = self.image.rotate(self.get_mapRotate(), expand=self.expandRotate)
             if self.displayRotateChange:
                 self.image.load()
                 SlTrace.lg("Rotated image(%.0f) width=%.2f height=%.2f expand=%s" %
-                       (self.mapRotate, self.image.width, self.image.height, self.expandRotate))
+                       (self.get_mapRotate(), self.image.width, self.image.height, self.expandRotate))
                 self.dbShow("after rotate")
                 SlTrace.lg("after show")
             
@@ -729,8 +747,8 @@ class GoogleMapImage:
             self.geoDraw = GeoDraw(self.image,
                                ulLat=self.ulLat, ulLong=self.ulLong,
                                lrLat=self.lrLat, lrLong=self.lrLong,
-                               mapRotate=self.mapRotate)
-            limitsXY, limitsXYpointh = self.geoDraw.limitsXY(self.mapPoints, self.mapRotate)
+                               mapRotate=self.get_mapRotate())
+            limitsXY, limitsXYpointh = self.geoDraw.limitsXY(self.mapPoints, self.get_mapRotate())
             x_min = limitsXY['min_x']
             y_min = limitsXY['min_y']
             x_max = limitsXY['max_x']
@@ -747,13 +765,27 @@ class GoogleMapImage:
         Adjusts GeoDraw member to reflect new dimensions
         """
         self.geoDraw.crop(box=box)
-        
-    def rotate(self, rotate=90.):
-        """
-        Rotate image by specified degrees
-        """
-        self.image = self.image.rotate(rotate)
 
+    def rotateMap(self, deg=None, incr=None, expand=None):
+        """ rotate map, via GeoDraw
+        """
+        return self.geoDraw.rotateMap(deg=deg, incr=incr, expand=expand)
+        
+    def rotate_xy(self, x=None, y=None,
+                   width=None, height=None, deg=None):
+        """ Rotate point x,y deg degrees(counter clockwise
+         about the center (Width/2, Hight/2)
+        :x: x value horizontal increasing to right
+        :y: y value, vertical increasing to down
+        :width: x width default: self.lr
+        :height:  y height
+        :deg: rotation, in degrees,
+                default: self.get_mapRotate()
+        :returns: x,y updated by rotation
+        """
+        return self.geoDraw.rotate_xy(x=x, y=y,
+                        width=width, height=height,
+                        deg=deg)
 
     def save(self, name=None, hasInfo=True):
         """
@@ -966,6 +998,10 @@ class GoogleMapImage:
         """
         
         return self.geoDraw.meterToPixel(meter)
+
+    
+    def pixelToMeter(self, pixel):
+        return self.geoDraw.pixelToMeter(pixel)
 
 
     def xMeterToPixel(self, meter):
@@ -1231,8 +1267,8 @@ class GoogleMapImage:
         """ Select region from pre-existing GoogleMapImage
         :gmi: pre-existing GoogleMapImage
         """
-        gmi_rotate = gmi.mapRotate
-        map_rotate = self.mapRotate
+        gmi_rotate = gmi.get_mapRotate()
+        map_rotate = self.get_mapRotate()
         gmi_image = gmi.image
         if gmi_rotate is not None or map_rotate is not None:
             gmi_rotate = 0. if gmi_rotate is None else gmi_rotate
@@ -1255,6 +1291,7 @@ if __name__ == "__main__":
     px_fmt = ".0f"
     forceNew = False
     mapRotate = 45.
+    enlargeForRotate = True
     maptype = "hybrid"
     testMarks = True
     useOldFile = False
@@ -1264,6 +1301,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--maprotate=', type=float, dest='mapRotate', default=mapRotate)
+    parser.add_argument('-g', '--enlargeforrotate', dest='enlargeForRotate', default=enlargeForRotate, action='store_true')
     parser.add_argument('--maptype', dest='maptype', default=maptype)
     parser.add_argument('--showsamplell', dest='showSampleLL', default=showSampleLL, action='store_true')
     parser.add_argument('--forcenew', dest='forceNew', default=forceNew, action='store_true')
@@ -1275,7 +1313,8 @@ if __name__ == "__main__":
     
     args = parser.parse_args()             # or die "Illegal options"
     testMarks = args.testMarks
-    mapRotate = args.mapRotate
+    mapRotate = args.get_mapRotate()
+    enlargeForRotate = args.enlargeForRotate
     maptype = args.maptype
     showSampleLL = args.showSampleLL
     forceNew = args.forceNew
@@ -1304,6 +1343,7 @@ if __name__ == "__main__":
                         mapBorderM=border,
                         compassRose=(.75, .25, .1),
                         mapRotate=mapRotate,
+                        enlargeForRotate=enlargeForRotate,
                         forceNew=forceNew,
                         maptype=maptype,
                         useOldFile=useOldFile,

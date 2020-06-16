@@ -169,8 +169,7 @@ class SurveyPoint:
         pc = self.get_canvas_coords()
         if self.point_type == SurveyPoint.POINT_TYPE_CIRCLE:
             w = h = self.display_size
-            x = pc.canvas_x
-            y = pc.canvas_y
+            x, y = self.ll_to_canvas()
             hw = w/2.
             hh = h/2.
             x0 = x - hw
@@ -192,6 +191,12 @@ class SurveyPoint:
             kwargs['long'] = self.long
         return self.mgr.get_canvas_coords(**kwargs)
     
+    def ll_to_canvas(self, lat=None, long=None):
+        if lat is None:
+            lat = self.lat
+        if long is None:
+            long = self.long
+        return self.mgr.ll_to_canvas(lat=lat, long=long)
             
     def display_label(self):
         """ Display label part
@@ -209,9 +214,7 @@ class SurveyPoint:
         text = self.label
         char_size = self.label_size
         text_fill = "white"
-        pc = self.get_canvas_coords()
-        x_pixel = pc.canvas_x
-        y_pixel = pc.canvas_y
+        x_pixel, y_pixel = self.ll_to_canvas()
         text_push_v = char_size*2
         text_push = char_size*(len(text)/2.+1)   
         text_x_off = self.display_size
@@ -284,10 +287,9 @@ class SurveyPoint:
         :long: longitude - checking coordinate
         :returns: True iff lat,long is within point selection
         """
-        p1c = self.get_canvas_coords()
-        p2c = self.get_canvas_coords(lat=lat, long=long)
-        
-        if ((p1c.canvas_x-p2c.canvas_x)**2 + (p1c.canvas_y-p2c.canvas_y)**2
+        canvas_x1, canvas_y1 = self.ll_to_canvas()
+        canvas_x2, canvas_y2 = self.ll_to_canvas(lat=lat, long=long)
+        if ((canvas_x1-canvas_x2)**2 + (canvas_y1-canvas_y2)**2
              <= self.select_size**2):
             return True
         
@@ -320,16 +322,18 @@ class SurveyPoint:
         px_fmt = tr_ctl.px_fmt
         dis_fmt = tr_ctl.dis_fmt
         unit = tr_ctl.unit
-        pc = self.get_canvas_coords()
+        pc_lat, pc_long = self.lat, self.long
+        pc_x, pc_y = self.ll_to_canvas()
+        pc = self.get_canvas_coords()       # To do others which we have not ported
         sc = self.get_sc()
         gmi = self.get_gmi()
         ll_fmt = tr_ctl.ll_fmt
         SlTrace.lg(f"{title}Point {self.label}: {self}")
-        SlTrace.lg(f"    Latitude: {pc.lat:{ll_fmt}} Longitude: {pc.long:{ll_fmt}}")
+        SlTrace.lg(f"    Latitude: {pc_lat:{ll_fmt}} Longitude: {pc_long:{ll_fmt}}")
         SlTrace.lg(f"    x({unit}): {pc.x_dist:{dis_fmt}}  y({unit}): {pc.y_dist:{dis_fmt}}")
         SlTrace.lg(f"    x(image pix): {pc.x_image:{px_fmt}}  y(image pix): {pc.y_image:{px_fmt}}")
-        SlTrace.lg(f"    x(canvas pix): {pc.canvas_x:{px_fmt}}  y(canvas pix): {pc.canvas_y:{px_fmt}}")
-        rotate = gmi.mapRotate if gmi.mapRotate is not None else 0.
+        SlTrace.lg(f"    x(canvas pix): {pc_x:{px_fmt}}  y(canvas pix): {pc_y:{px_fmt}}")
+        rotate = gmi.get_mapRotate()
         SlTrace.lg(f"    rot({rotate})")
         SlTrace.lg(f"    ulLat: {gmi.ulLat:{ll_fmt}} ulLong: {gmi.ulLong:{ll_fmt}}")
         SlTrace.lg(f"    lrLat: {gmi.lrLat:{ll_fmt}} lrLong: {gmi.lrLong:{ll_fmt}}")

@@ -56,7 +56,7 @@ SlTrace.lg(pgm_info)
 ###SlTrace.setTraceFlag("get_next_val", 1)
 trace = ""
 undo_len=200           # Undo length (Note: includes message mcd
-
+enlargeForRotate = True
 mapRotate = 45.
 profile_running = False
 lat = 42.34718
@@ -84,6 +84,7 @@ def askopenfilename(**options):
 parser = argparse.ArgumentParser()
 
 parser.add_argument('-a', '--address=', dest='address', default=address)
+parser.add_argument('-g', '--enlargeforrotate', dest='enlargeForRotate', default=enlargeForRotate, action='store_true')
 parser.add_argument('-m', '--mapfile=', dest='map_file', default=map_file)
 parser.add_argument('-r', '--maprotate=', type=float, dest='mapRotate', default=mapRotate)
 parser.add_argument('-i', '--infofile=', dest='infoFile', default=infoFile)
@@ -100,6 +101,7 @@ parser.add_argument('-e', '--height=', type=int, dest='height', default=height)
 args = parser.parse_args()             # or die "Illegal options"
 SlTrace.lg("args: {}\n".format(args))
 address = args.address
+enlargeForRotate = args.enlargeForRotate
 lat_long = args.lat_long
 image_file_name = args.image_file_name
 profile_running = args.profile_running
@@ -210,9 +212,20 @@ def add_sample_file():
 def favorites():
     """ Shortcut to Mapping Control Favorites button
     """
+    global map_ctl
+    global pt_mgr
+    
     if sc is None:
         return
     
+    if pt_mgr is None:
+        pt_mgr = SurveyPointManager(sc)
+    if sc.pt_mgr is None:
+        sc.set_pt_mgr(pt_mgr)
+        
+    if sc.map_ctl is None:
+        sc.map_ctl = MappingControl(mgr=pt_mgr, address=test_address, enlargeForRotate=enlargeForRotate)
+        
     sc.map_ctl.get_favorites()
 
 def save_map_file():
@@ -311,7 +324,8 @@ def do_map_file(file_name):
     ###width = 100
     ###height = 100
     SlTrace.lg(f"canvas: width={width} height={height}")
-    sc = ScrolledCanvas(fileName=file_name, width=width, height=height, parent=app)
+    sc = ScrolledCanvas(fileName=file_name, width=width, height=height, parent=app,
+                        enlargeForRotate=enlargeForRotate)
     pt_mgr = SurveyPointManager(sc)
 
 def do_lat_long(lat_long, xDim=40,  zoom=22, unit='m'):
@@ -326,7 +340,8 @@ def do_lat_long(lat_long, xDim=40,  zoom=22, unit='m'):
     
     ulLat, ulLong = lat_long
     gmi = GoogleMapImage(ulLat=ulLat, ulLong=ulLong, xDim=xDim, zoom=zoom, unit=unit,
-                          mapRotate=mapRotate)
+                         enlargeForRotate=enlargeForRotate,
+                         mapRotate=mapRotate)
     gmi.saveAugmented()             # Save file for reuse
     return  gmi.makeFileName()
 
@@ -336,7 +351,7 @@ def do_address(address):
     :address: string of address
     """
     if address == "ASK":
-        map_ctl = MappingControl(mgr=pt_mgr, address=test_address)
+        map_ctl = MappingControl(mgr=pt_mgr, address=test_address, enlargeForRotate=enlargeForRotate)
         lat_long = map_ctl.get_location()
         if lat_long is None:
             loc_str = map_ctl.get_location_str()
@@ -392,6 +407,7 @@ if map_file == "TEST":
     map_file = test_map_file
     
 sc = ScrolledCanvas(fileName=map_file, width=width, height=height, parent=app,
+                    enlargeForRotate=enlargeForRotate,
                     trailfile=trailfile)
 pt_mgr = sc.get_pt_mgr()
 map_ctl = sc.get_map_ctl()

@@ -103,6 +103,7 @@ class MappingControl(SelectControlWindow):
                  zipcode="",
                  country="",
                  maptype="hybrid",
+                 enlargeForRotate=False,
                  mapRotate=0.,
                  longitude=0.,      # Set float type
                  latitude=0.,       # Set float type
@@ -138,6 +139,7 @@ class MappingControl(SelectControlWindow):
         self.country = country
         self.maptype = maptype
         self.mapRotate = mapRotate
+        self.enlargeForRotate = enlargeForRotate
         self.latitude = latitude
         self.longitude = longitude
         self.width = width
@@ -246,11 +248,24 @@ class MappingControl(SelectControlWindow):
         self.set_radio_button(frame=map_frame, field="maptype", label="satellite", command=self.change_maptype)
         self.set_radio_button(frame=map_frame, field="maptype", label="hybrid", command=self.change_maptype)
         self.set_radio_button(frame=map_frame, field="maptype", label="terrain", command=self.change_maptype)
-        if self.mapRotate is None:
-            map_rotate = 0.0
-        else:
-            map_rotate = self.mapRotation
-        self.set_entry(field="rotate", label="Rotation", value=map_rotate, width=6)
+        map_rotation_frame = Frame(location_frame)
+        map_rotation_frame.pack()
+        self.set_fields(map_rotation_frame, "map", title="Map Rotation")
+        self.set_button(field="rotate", label="Set", command=self.rotate_map_req)
+        map_rotate = self.get_mapRotate()
+        self.set_entry(field="rotate", label="Rotation",
+                        value=map_rotate, width=6,
+                        enter_command=self.rotate_enter)
+        self.set_entry(field="rotate_cur", label="Current", value=self.get_mapRotate(), width=5)
+
+        map_rotation_frame2 = Frame(location_frame)
+        map_rotation_frame2.pack()
+        self.set_fields(map_rotation_frame2, "map", "Incremental Rotation")
+        self.set_entry(field="rotate_change", label="Change Rotation",
+                        value=45, width=5,
+                        enter_command=self.rotate_change_enter)
+        self.set_button(field="rotate", label="Rotate", command=self.rotate_change_map_req)
+        self.set_button(field="rotate", label="Clockwise", command=self.rotate_change_map_req_neg)
        
         latitude_longitude_frame = Frame(location_frame)
         self.set_vert_sep(location_frame, text="")
@@ -321,10 +336,11 @@ class MappingControl(SelectControlWindow):
                                          unit=self.unit,
                                          maptype=self.maptype,
                                          mapRotate=self.mapRotate,
+                                         enlargeForRotate=self.enlargeForRotate,
                                          zoom=self.zoom)
+        self.mgr.sc.size_image_to_canvas()
         self.mgr.redisplay()       # Resets points, trackings display
         self.update()       # Force visual update
-        self.mgr.sc.size_image_to_canvas()
         fav =  self.get_favorite_from_ctl()
         fav_name = self.get_favorite_name(fav.name)
         fav.name = fav_name
@@ -457,6 +473,11 @@ class MappingControl(SelectControlWindow):
         loc_str = self.list_sep([self.address, self.street1, self.street2, self.city, self.state, self.country])
         return loc_str
 
+    def get_mapRotate(self):
+        """ Get current map rotation 0<= deg < 360
+        """
+        return self.mgr.get_mapRotate()
+
     def get_favorite_from_ctl(self):
         """ Generate AddressFavorite from controls
         :returns: FavoriteAddress with ctl values
@@ -470,6 +491,56 @@ class MappingControl(SelectControlWindow):
                 setattr(fv, att, val)
         return fv
 
+    def rotate_enter(self, _):
+        self.rotate_map_req()
+
+    def rotate_map_req(self):
+        """ Rotate map, req from form
+        """
+        self.set_vals()
+        to = self.get_val_from_ctl("map.rotate")
+        self.rotate_map(deg=to)
+
+    def rotate_change_enter(self, _):
+        self.rotate_change_map_req()
+
+    def rotate_change_map_req(self):
+        """ Rotate map, req from form
+        """
+        self.set_vals()
+        towards = self.get_val_from_ctl("map.rotate_change")
+        self.rotate_map(deg=towards, incr=True)
+
+    def rotate_change_map_req_neg(self):
+        """ Rotate map, req from form
+        """
+        self.set_vals()
+        towards = self.get_val_from_ctl("map.rotate_change")
+        self.rotate_map(deg=-towards, incr=True)
+
+
+                
+    def rotate_map(self, deg=None, incr=False):
+        """ Rotate map towards this heading
+        :towards: degrees from North
+        """
+        if deg is None:
+            self.set_vals()
+            deg = self.get_val_from_ctl("map.rotate")
+        self.mgr.rotate_map(deg=deg, incr=incr)
+        self.set_ctl("map.rotate_cur", self.get_mapRotate())
+
+
+    def rotate_map_to(self, towards=None):
+        """ Rotate map towards this heading
+        :towards: degrees from North
+        """
+        if towards is None:
+            self.set_vals()
+            towards = self.get_val_from_ctl("map.rotate")
+        self.rotate_map_to(towards, incr=False)
+         
+        
     def set_ctl_from_favorite(self, favorite):
         """ Update ctls from favorite
         :favorite: favorite's values
@@ -479,6 +550,7 @@ class MappingControl(SelectControlWindow):
             ctl_field = att_to_ctl[1]
             val = getattr(favorite, att)
             if val is not None:
+                SlTrace.lg(f"set_ctl_from_favorite(ctl_field({ctl_field}), val={val})", "set_ctl")
                 self.set_ctl_val(ctl_field, val)
         
     def set_vals(self):
@@ -513,7 +585,7 @@ if __name__ == '__main__':
 
     def set_cmd(ctl):
         SlTrace.lg("Set Button")
-                
+    enlargeForRotate = True            
     root = Tk()
     root.withdraw()       # Hide main window
 
@@ -523,6 +595,7 @@ if __name__ == '__main__':
 
     mc = MappingControl(None, mw=None, title="MappingControl Testing",
                         address="Testing Address",
+                        enlargeForRotate=enlargeForRotate,
                          win_x=200, win_y=300, win_width=400, win_height=150)
     ###tc.control_display()
 

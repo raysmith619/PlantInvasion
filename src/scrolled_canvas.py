@@ -13,6 +13,7 @@ import survey_point_manager
 class ScrolledCanvas(Frame):
     def __init__(self, fileName=None, gmi=None, image=None, title=None, parent=None,
                  mapRotate=None,
+                 enlargeForRotate=False,
                  maptype=None,
                  map_address=None,
                  width=None, height=None,
@@ -34,6 +35,9 @@ class ScrolledCanvas(Frame):
         :image - image, if present
         :mapRotate: map rotation angle, in deg, counter clock wise, with respect to view
                     default: North (None)
+        :enlargeForRotate: enlarge image load to account for
+                    possible rotation, to facilitate upright pictures
+                    default: False no enlargement
         :mouse_down_call: if present, function to call with x,y canvas coordinates
         :mouse_move_call: if present, function to call with x,y canvas coordinates
                              on mouse motion
@@ -47,6 +51,7 @@ class ScrolledCanvas(Frame):
         :unit: Linear distance unit m(eter), y(ard), f(oot) - default: "m" - meter
         """
         self.mapRotate = mapRotate
+        self.enlargeForRotate = enlargeForRotate
         self.isDown = False
         self.inside = False
         self.scroll_x = 0.          # Scrolling fractions
@@ -100,15 +105,8 @@ class ScrolledCanvas(Frame):
         else:
             ###raise SelectError("Must provide one of fileName, gmi, or image")
             SlTrace.lg("ScrolledCanvas: Blank Start")
-        if pt_mgr is None:
-            pt_mgr = survey_point_manager.SurveyPointManager(self,
-                                                              trailfile=trailfile)
-        self.pt_mgr = pt_mgr
-        if map_ctl is None:
-            if not skip_map_ctl:
-                map_ctl = MappingControl(mgr=pt_mgr, address=map_address, mapRotate=self.mapRotate)
+        self.set_pt_mgr(pt_mgr)
         self.map_ctl = map_ctl
-        self.set_resize_call(pt_mgr.resize)
 
     def get_pt_mgr(self):
         """ Return pt manager, created or passed in
@@ -122,6 +120,16 @@ class ScrolledCanvas(Frame):
         """
         return self.map_ctl 
 
+    def get_height(self):
+        """ Get canvas height
+        """
+        return self.canv.winfo_height()
+
+    def get_width(self):
+        """ Get canvas width
+        """
+        return self.canv.winfo_width()
+    
     def set_image(self):
         """ Set image, in preparation to save completed graphics file
         In genera, copy objects like trails which are canvas based objects to
@@ -136,6 +144,13 @@ class ScrolledCanvas(Frame):
             self.gmi.addTrail(mgr.trail, width=trail.width*1.85)
             self.lower_image()
             self.size_image_to_canvas()
+
+    def set_pt_mgr(self, pt_mgr):
+        """ Set  up link with pt_mgr
+        """
+        self.pt_mgr = pt_mgr
+        if pt_mgr is not None:
+            self.set_resize_call(pt_mgr.resize)
                 
     def set_resize_call(self, called):
         """ Link resize event to probably SurveyPointManager.resize
@@ -166,7 +181,7 @@ class ScrolledCanvas(Frame):
         self.canvas_width = self.canv.winfo_width()
         self.canvas_height = self.canv.winfo_height()
         self.image = self.imOriginal.resize((self.canvas_width, self.canvas_height))
-        self.canv.config(scrollregion=(0,0,self.canvas_width,self.height))
+        self.canv.config(scrollregion=(0,0,self.canvas_width,self.canvas_height))
         self.im2=PIL.ImageTk.PhotoImage(self.image)
         self.imgtag=self.canv.create_image(0,0,anchor="nw",image=self.im2)
         self.lower_image()
@@ -199,6 +214,25 @@ class ScrolledCanvas(Frame):
         self.im2=PIL.ImageTk.PhotoImage(self.image)
         self.imgtag=self.canv.create_image(0,0,anchor="nw",image=self.im2)
 
+    def ll_to_canvas(self, lat=None, long=None):
+        """ Convert latitude/Longitude to canvas_x, canvas_y
+        :lat: latitude
+        :long: longitude
+        Transformation:
+            1. Scale lat/Long offsets to unrotated canvas x,y Note that image has been
+            resized to canvas.
+            2. Rotate x,y to mapRotate
+            
+        Part of single purpose functions, replacing CanvasCoords
+        """
+        x_image, y_image = self.gmi.getXY(latLong=(lat,long))
+        canvas_x, canvas_y = self.image_to_canvas((x_image,y_image))
+        cr_x, cr_y = self.gmi.rotate_xy(x=canvas_x, y=canvas_y,
+                                        width=self.get_canvas_width(),
+                                        height=self.get_canvas_height(),
+                                        deg=self.gmi.get_mapRotate())
+        return cr_x, cr_y
+        
     def lower_image(self):
         self.canv.lower(self.imgtag)
     
@@ -235,7 +269,7 @@ class ScrolledCanvas(Frame):
         if self.mouse_double_down_call is not None:
             self.mouse_double_down_call(x,y)
     
-    def canvas2image(self, x_pixel, y_pixel):
+    def canvas2image_OLD(self, x_pixel, y_pixel):
         """ Convert canvas coordinates to image coordinates
         taking into consideration scrolling and scaling, rotation(TBD)
         :x_pixel: canvas x
@@ -256,7 +290,7 @@ class ScrolledCanvas(Frame):
         y_image = y_pixel*image_height/canvas_height
         return (x_image, y_image)
     
-    def image2canvas(self, x_image, y_image):
+    def image2canvas_OLD(self, x_image, y_image):
         """ Convert image coordinates to canvas coordinates
         taking into consideration scrolling and scaling, rotation(TBD)
         :x_image: image x coord
@@ -276,6 +310,72 @@ class ScrolledCanvas(Frame):
         canvas_x = x_image*canvas_width/image_width
         canvas_y = y_image*canvas_height/image_height
         return (canvas_x, canvas_y)
+
+    def canvas_to_image(self, xY):
+        """
+        Convert  canvas pixel x,y to image pixel x,y
+        1. Rotate from up facing to mapRotate
+        2. Scale from canvas x,y pixel to image x,y pixel
+        ??? 3. Rotate back to mapRotate
+        Returning canvas x,y pair
+        """
+        gmi = self.get_gmi()
+        mapRotate = gmi.get_mapRotate()
+        if xY is None:
+            raise SelectError("imageToCanvas: xY required")
+        
+        canvas_width = self.get_canvas_width()
+        canvas_height = self.get_canvas_height()
+        canvas_x, canvas_y = xY 
+        canvas_x, canvas_y = gmi.rotate_xy(
+                            x=canvas_x, y=canvas_y,
+                            width=canvas_width,
+                            height=canvas_height,
+                            deg=mapRotate)
+
+        image_width = self.gmi.getWidth()
+        image_height = self.gmi.getHeight()
+        x_image = canvas_x*image_width/canvas_width
+        y_image = canvas_y*image_height/canvas_height
+
+        return x_image, y_image
+
+    def image_to_canvas(self, xY):
+        """
+        Convert  image pixel x,y to canvas pixel x,y
+        1. Rotate from mapRotate to up facing
+        2. Scale from image x,y pixel to canvas x,y
+        """
+        gmi = self.get_gmi()
+        if gmi is None:
+            return 0,0
+        
+        if xY is None:
+            raise SelectError("imageToCanvas: xY required")
+
+        x_image, y_image = gmi.rotate_xy(x=xY[0], y=xY[1],
+                            width=gmi.getWidth(),
+                            height=gmi.getHeight(),
+                            deg=-gmi.get_mapRotate())
+
+        image_width = self.gmi.getWidth()
+        image_height = self.gmi.getHeight()
+        canvas_width = self.get_canvas_width()
+        canvas_height = self.get_canvas_height()
+        canvas_x = x_image*canvas_width/image_width
+        canvas_y = y_image*canvas_height/image_height
+        ''' No rotation back ???
+        canvas_x, canvas_y = self.rotate_xy(     # Returns: x right
+                                                #          y downwards
+                                x=canvas_x, y=canvas_y,
+                                width=canvas_width, height=canvas_height,
+                                mapRotate)
+
+        image_width = self.gmi.getWidth()
+        image_height = self.gmi.getHeight()
+        '''
+        return canvas_x, canvas_y
+
 
     def image_fract(self, canvas_xy=None):
         """ Convert canvas coordinates (x,y) to image x-fraction,  y-fraction
@@ -366,6 +466,9 @@ class ScrolledCanvas(Frame):
         canvas_width = self.get_canvas().winfo_width()
         return canvas_width
 
+    def get_gmi(self):
+        return self.gmi
+    
     def close(self):
         """
         Close file window
@@ -406,11 +509,6 @@ class ScrolledCanvas(Frame):
         self.image = image
         self.canv = Canvas(self.canvas_frame, relief=SUNKEN)
         self.canv.pack(expand=YES, fill=BOTH)
-        self.canv.bind ("<ButtonPress-1>", self.down)
-        self.canv.bind ("<ButtonRelease-1>", self.up)
-        self.canv.bind("<Double-Button-1>", self.double_down)
-        self.canv.bind ( "<Enter>", self.enter)
-        self.canv.bind ("<Leave>", self.leave)
         
         w,h = self.image.size
         if width is None:
@@ -419,18 +517,11 @@ class ScrolledCanvas(Frame):
             height = h
         self.canv_width = self.width = width
         self.canv_height = self.height = height
-            
-        self.canv.config(width=self.canv_width, height=self.canv_height)
-        self.bind("<Configure>", self.on_resize)
-        
         SlTrace.lg("sizeWindow width=%d height=%d" % (width, height), "resize")
         self.image = image.resize((width,height))
-        
-        self.canv.config(width=width, height=height)
-        #self.canv.config(scrollregion=(0,0,1000, 1000))
-        #self.canv.configure(scrollregion=self.canv.bbox('all'))
-        self.canv.config(highlightthickness=0)
-        
+        self.im2=PIL.ImageTk.PhotoImage(self.image)
+        self.imgtag=self.canv.create_image(0,0,anchor="nw",image=self.im2)
+
         self.sbarV = sbarV = Scrollbar(self, orient=VERTICAL)
         self.sbarH = sbarH = Scrollbar(self, orient=HORIZONTAL)
         
@@ -445,8 +536,13 @@ class ScrolledCanvas(Frame):
 
         self.canv.pack(side=LEFT, expand=YES, fill=BOTH)
         self.canv.config(scrollregion=(0,0,width,height))
-        self.im2=PIL.ImageTk.PhotoImage(self.image)
-        self.imgtag=self.canv.create_image(0,0,anchor="nw",image=self.im2)
+
+        self.canv.bind ("<ButtonPress-1>", self.down)
+        self.canv.bind ("<ButtonRelease-1>", self.up)
+        self.canv.bind("<Double-Button-1>", self.double_down)
+        self.canv.bind ( "<Enter>", self.enter)
+        self.canv.bind ("<Leave>", self.leave)
+        self.bind("<Configure>", self.on_resize)
 
     def update_file(self, fileName, **kwargs):
         """ Update file
@@ -470,6 +566,8 @@ class ScrolledCanvas(Frame):
 
         if self.maptype is not None and 'maptype' not in kwargs:
             kwargs['maptype'] = self.maptype        
+        if self.enlargeForRotate is not None and 'enlargeForRotate' not in kwargs:
+            kwargs['enlargeForRotate'] = self.enlargeForRotate        
         gmi = GoogleMapImage(**kwargs)
         if gmi is None:
             raise SelectError(f"Can't load GoogleMapImage(latLong{latLong}")
@@ -526,7 +624,7 @@ class ScrolledCanvas(Frame):
 if __name__ == "__main__":
     import argparse
     from tkinter.filedialog import askopenfilename
-    from survey_point_manager import SurveyPointManager
+    from GeoDraw import GeoDraw
     
     test_mapFile = '../out/gmi_ulA42_376371_O-71_187576_lRA42_369949_O-71_181274_640x640_sc1z19_h_mr45_AUG.png'
     mapFile = r"C:\Users\raysm\workspace\python\PlantInvasion\out\gmi_ulA42_376000_O-71_177315_lRA42_375640_O-71_176507_640x640_sc1z22_h.png"
@@ -542,23 +640,85 @@ if __name__ == "__main__":
     parser.add_argument('-w', '--width=', type=int, dest='width', default=width)
     
     args = parser.parse_args()             # or die "Illegal options"
+
     
-    mapFile = args.mapFile
-    if mapFile == "TEST":
-        mapFile = test_mapFile      # Use test file
-    infoFile = args.infoFile
-    width = args.width
-    height = args.height
-    ###root = Tk()
-    ###Tk().withdraw() # we don't want a full GUI, so keep the root window from appearing
-    if mapFile is None:
-        mapFile = askopenfilename() # show an "Open" dialog box and return the path to the selected file
-    SlTrace.lg(f"mapfile: {mapFile}")
-    ###width = 100
-    ###height = 100
-    SlTrace.lg(f"canvas: width={width} height={height}")
-    ###frame = Frame(root)
-    ###frame.pack()
-    sc = ScrolledCanvas(mapFile, width=width, height=height)
-    pt_mgr = SurveyPointManager(sc)
-    mainloop()
+    def rotate_map_test():
+        npass = 0
+        nfail = 0
+        ntest = 0
+        mapRotate = 0.
+        w = 300.
+        h = 400.
+        im = Image.new("RGB", (int(w), int(h)))    
+        gd = GeoDraw(im, mapRotate=mapRotate,
+                ulLat=None, ulLong=None,    # Bounding box
+                lrLat=None, lrLong=None,
+                      ulX=0, ulY=0, lrX=w, lrY=h)
+        f_fmt = "10.6f"
+        for i in range(0, 6+1):
+            x1 = i*50.
+            for j in range(0, 4+1):
+                y1 = j*100.
+                for k in range(0, 8+1):
+                    deg = k*45.
+                    x2, y2 = gd.rotate_xy(x=x1, y=y1,
+                                           width=gd.getWidth(),
+                                           height=gd.getHeight(), deg=deg)
+                    SlTrace.lg(f"{deg:5.1f}"
+                               f" x1: {x1:{f_fmt}} y1: {y1:{f_fmt}}"
+                               f"  x2: {x2:{f_fmt}} y2: {y2:{f_fmt}}")
+                    if (x1,y1) == (w/2, 0):
+                        if deg == 45.:
+                            ntest += 1
+                            theta = radians(deg)
+                            x_shrink = h/2/sqrt(2)
+                            y_shrink = h/2/sqrt(2)
+                            x2_expect = w/2 - x_shrink
+                            y2_expect = h/2 - y_shrink
+                            if not close((x2,y2), (x2_expect, y2_expect)):
+                                nfail += 1
+                                SlTrace.lg(f" FAIL: (x2: {x2:{f_fmt}}, y2: {y2:{f_fmt}})"
+                                           f" != (x2_expect: {x2_expect:{f_fmt}},"
+                                           f" y2_expect: {y2_expect:{f_fmt}})")
+                            else:
+                                npass += 1
+                                SlTrace.lg(f" PASS: (x2: {x2}, y2: {y2})"
+                                           f" == (x2_expect: {x2_expect}, y2_expect: {y2_expect})")
+                        if deg == 90.:
+                            ntest += 1
+                            if not close((x2,y2), ((w-h)/2, h/2)):
+                                nfail += 1
+                                SlTrace.lg(f" FAIL: (x2: {x2}, y2: {y2})"
+                                           f" != ((w-h)/2: {(w-h)/2}, h/2: {h/2})")
+                            else:
+                                npass += 1
+                                SlTrace.lg(f" PASS: (x2: {x2}, y2: {y2})"
+                                           f" == ((w-h)/2: {(w-h)/2}, h/2: {h/2})")
+        SlTrace.lg(f"{ntest:4d} tests  {npass:4d} pass  {nfail:4d} fail")
+    
+
+    
+    do_canvas_image_test = True
+    if do_canvas_image_test:
+        pass                # TBD
+        
+    do_mapfile_test = False
+    if do_mapfile_test:
+        mapFile = args.mapFile
+        if mapFile == "TEST":
+            mapFile = test_mapFile      # Use test file
+        infoFile = args.infoFile
+        width = args.width
+        height = args.height
+        ###root = Tk()
+        ###Tk().withdraw() # we don't want a full GUI, so keep the root window from appearing
+        if mapFile is None:
+            mapFile = askopenfilename() # show an "Open" dialog box and return the path to the selected file
+        SlTrace.lg(f"mapfile: {mapFile}")
+        ###width = 100
+        ###height = 100
+        SlTrace.lg(f"canvas: width={width} height={height}")
+        ###frame = Frame(root)
+        ###frame.pack()
+        sc = ScrolledCanvas(mapFile, width=width, height=height)
+        mainloop()

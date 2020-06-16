@@ -3,7 +3,7 @@ Interface to Pillow Image facilitating map annotation
 """
 import os
 from PIL import Image, ImageDraw, ImageFont
-from math import cos, sin, sqrt, asin, atan2, pi, ceil, radians
+from math import cos, sin, sqrt, asin, atan2, pi, ceil, radians, degrees
 from geographiclib.geodesic import Geodesic
 
 from select_error import SelectError
@@ -31,10 +31,10 @@ EARTH_RADIUS = 6378137.
 EQUATOR_CIRCUMFERENCE = 2 * pi * EARTH_RADIUS
 
 def deg2rad(degree):
-    return degree/180.*pi
+    return radians(degree)
 
 def rad2deg(rad):
-    return rad/pi*180.
+    return degrees(rad)
     
 trace_scale = False
 
@@ -222,9 +222,10 @@ class GeoDraw:
         self.in_pixelToLatLong = 0      # Debugging level count
         self.in_latLongToPixel = 0
         self.showSampleLL = showSampleLL
-        self.compass_rose = CompassRose(present=False)    
+        self.compass_rose = CompassRose().live_obj()    
         if image is None:
-            image = Image.new("RGB", (400, 200))
+            image = Image.new("RGB", (100, 100))
+        self.imageOriginal = image
         self.setImage(image)
         ulmx = 0.
         ulmy = 0.
@@ -235,6 +236,7 @@ class GeoDraw:
         self.lrmx = lrmx
         self.lrmy = lrmy
         self.mapRotate = mapRotate
+        self.mapRotateOriginal = mapRotate      # record original
         self.expandRotate = expandRotate
         
         if deg is not None and theta is not None:
@@ -502,14 +504,13 @@ class GeoDraw:
         Add orientation marker
         """
         SlTrace.lg("addCompassRose")
-        if compassRose is None:
-            compassRose = (.25, .75, .25)
-        self.compass_rose = CompassRose(x_fract=compassRose[0],
-                                        y_fract=compassRose[1],
-                                        len_fract=compassRose[2])
-        xFraction = compassRose[0]
-        yFraction = compassRose[1]
-        lenFraction = compassRose[2]
+        self.compass_rose = CompassRose(placement=compassRose).live_obj()
+        if self.compass_rose is None:
+            return
+        
+        xFraction = self.compass_rose.x_fract
+        yFraction = self.compass_rose.y_fract
+        lenFraction = self.compass_rose.len_fract
         mx = self.getWidth() * xFraction
         my = self.getHeight() * yFraction
         arrow_len = sqrt(self.getWidth()**2 + self.getHeight()**2) * lenFraction
@@ -647,10 +648,8 @@ class GeoDraw:
             latlong_size = int(latlong_size)
             loc_string = "%.5f\n%.5f" % (long, lat)
             font_loc = ImageFont.truetype("arial.ttf", size=latlong_size)
-            if self.mapRotate is None:
-                self.mapRotate = 0.
             latlong_xy = self.addToPoint(latLong=(lat,long),
-                                         leng=latlong_size, deg=-self.mapRotate)
+                                         leng=latlong_size, deg=-self.get_mapRotate())
             self.text(loc_string, xY=latlong_xy, font=font_loc,
                        fill=(255,255,255,255))    
 
@@ -964,8 +963,7 @@ class GeoDraw:
             
         if deg is None:
             deg = 0
-        if self.mapRotate is not None:
-            deg += self.mapRotate
+        deg += self.get_mapRotate()
             
         theta = deg/180.*pi
         if theta != 0:
@@ -1080,6 +1078,13 @@ class GeoDraw:
         latLong = self.pixelToLatLong(xY)
         return latLong
 
+    def get_mapRotate(self):
+        """ Get current map rotation 0<= deg < 360
+        """
+        rotate = 0 if self.mapRotate is None else self.mapRotate % 360
+            
+        return rotate
+
 
     def getPos(self, latLong=None, pos=None, xY=None, unit='m', ref_latLong=None):
         """
@@ -1168,19 +1173,19 @@ class GeoDraw:
         self.in_latLongToPixel += 1
         lat = latLong[0]
         long = latLong[1]
-        lat_offset = self.ulLat - lat         # from upper left corner - latitude decreases down
+        lat_offset = self.ulLat - lat         # from upper left corner - latitude decreases down, offset increases down
         long_offset = long - self.ulLong      # increase left to right
         long_offset, lat_offset = self.rotate_xy(       # Returns: x-offset(longitude),
                                                         #          y-offset(latitude)
                     x=long_offset, y=lat_offset,
                     width=self.long_width, height=self.lat_height,
-                    deg=0 if self.mapRotate is None else -self.mapRotate)
+                    deg=-self.get_mapRotate())
         mx = long_offset/self.long_width*self.getWidth()
         my = lat_offset/self.lat_height*self.getHeight()
         
         mx, my = self.rotate_xy(x=mx, y=my,
                             width=self.getWidth(), height=self.getHeight(),
-                            deg=0 if self.mapRotate is None else self.mapRotate)
+                            deg=self.get_mapRotate())
 
         if self.in_pixelToLatLong == 0:
             latLong2 = self.pixelToLatLong((mx,my))
@@ -1188,7 +1193,7 @@ class GeoDraw:
             longchg = latLong2[1]-latLong[1]
             max_diff = 5e-3
             if abs(latchg) > max_diff or abs(longchg) > max_diff:
-                SlTrace.lg(f"latLongToPixel rot({self.mapRotate}) not reversable: latchg:{latchg:.7} longchg:{longchg:.7}")
+                SlTrace.lg(f"latLongToPixel rot({self.get_mapRotate()}) not reversable: latchg:{latchg:.7} longchg:{longchg:.7}")
                 SlTrace.lg(f"    latLong:{latLong} latLong2:{latLong2}")
 
 
@@ -1211,14 +1216,14 @@ class GeoDraw:
         
         mx, my = self.rotate_xy(x=xY[0], y=xY[1],
                             width=self.getWidth(), height=self.getHeight(),
-                            deg=0 if self.mapRotate is None else -self.mapRotate)
+                            deg=-self.get_mapRotate())
         long_offset = mx * self.long_width / self.getWidth()
         lat_offset = my * self.lat_height / self.getHeight()
         long_offset, lat_offset = self.rotate_xy(       # Returns: x (longitude offset) right
                                                         #          y (latitude offset) downwards
                                     x=long_offset, y=lat_offset,
                                     width=self.long_width, height=self.lat_height,
-                                    deg=0 if self.mapRotate else self.mapRotate)
+                                    deg=self.get_mapRotate())
 
         lat = self.ulLat - lat_offset           # Offset down from upper left corner
         long = self.ulLong + long_offset
@@ -1227,13 +1232,14 @@ class GeoDraw:
             xchg = xY2[0]-xY1[0]
             ychg = xY2[1]-xY1[1]
             if abs(xchg) > 1e-7 or abs(ychg) > 1e-7:
-                SlTrace.lg(f"pixelToLat rot({self.mapRotate}) not reversable: xchg:{xchg:.7} ychg:{ychg:.7}")
+                SlTrace.lg(f"pixelToLat rot({self.get_mapRotate()}) not reversable: xchg:{xchg:.7} ychg:{ychg:.7}")
                 SlTrace.lg(f"    xY1:{xY1} xY2:{xY2}")
 
         self.in_pixelToLatLong -= 1
         return lat, long
         
-    def rotate_xy(self, x=None, y=None, width=None, height=None, deg=None):
+    def rotate_xy(self, x=None, y=None, width=None,
+                   height=None, deg=None):
         """ Rotate point x,y deg degrees(counter clockwise
          about the center (Width/2, Hight/2)
         :x: x value horizontal increasing to right
@@ -1241,11 +1247,13 @@ class GeoDraw:
         :width: x width default: self.lr
         :height:  y height
         :deg: rotation, in degrees,
-                default: self.mapRotate
+                default: self.get_mapRotate()
         :returns: x,y updated by rotation
         """
         if deg is None:
-            deg = self.mapRotate
+            deg = self.get_mapRotate()
+            if deg is None:
+                deg = 0
         angle = -radians(deg)           # Adjust for downward going y
         if width is None:
             width=self.getWidth()
@@ -1264,7 +1272,7 @@ class GeoDraw:
         ### but I gave up and used a slick version from Stackoverflow
         ### with a modification for downward increasing y
         if deg is None:
-            deg = self.mapRotate
+            deg = self.get_mapRotate()
         effective_zero = 1e-7
         if deg is not None and deg > effective_zero:
             theta = deg2rad(deg)         # Rotate to North Facing
@@ -1377,14 +1385,29 @@ class GeoDraw:
         self.curXY = xY
 
 
-    def rotateMap(self, deg, expand=None):
+    def rotateMap(self, deg, incr=True, expand=None):
         """
         Rotate map, updating image, and mapRotate
+        Using original image to avoid pixel loss
+        :deg: number of degrees to rotate
+        :incr: incremental rotation False = absolute
+            default: True - rotate from current
+        :expand: expand image (defined) by PIL image
         """
-        self.mapRotate = deg        # TFD
-        im = self.image.rotate(deg, expand=expand)
-        self.setImage(im)
+        mapRotate = self.get_mapRotate()
+        mapRotateOriginal = 0 if self.mapRotateOriginal is None else self.mapRotateOriginal
+        if incr:
+            to_deg = mapRotate + deg
+        else:
+            to_deg = deg
+        self.mapRotate = to_deg
+        to_deg = self.get_mapRotate()   # Normalize
+        self.mapRotate = to_deg         # Store normaized
+        from_orig_deg = to_deg - mapRotateOriginal    
 
+        im = self.imageOriginal.rotate(from_orig_deg, expand=expand)
+        self.setImage(im)
+        return im
 
     def rotatePoints(self, points, rotate=None):
         """
@@ -1392,7 +1415,7 @@ class GeoDraw:
         Return copy of points array, with lat, long, adjusted by map rotation
         """
         if rotate is None:
-            rotate = self.mapRotate
+            rotate = self.get_mapRotate()
         
 
     def setCurAngle(self,
@@ -1682,7 +1705,7 @@ if __name__ == "__main__":
         gd = GeoDraw(im, mapRotate=mapRotate,
                       ulLat=p1[0], ulLong=p1[1],
                       lrLat=p3[0], lrLong=p3[1])
-        SlTrace.lg(f"mapRotate: {gd.mapRotate:.1f} degrees")
+        SlTrace.lg(f"mapRotate: {gd.get_mapRotate():.1f} degrees")
         for n, pt in enumerate([p1,p2,p3,p4], 1):
             lat, long = pt
             x, y = gd.latLongToPixel((lat, long))

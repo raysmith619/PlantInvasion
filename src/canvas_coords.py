@@ -32,7 +32,7 @@ class CanvasCoords:
             if canvas_y is None:
                 raise SelectError("canvas_x with no canvas_y")
             
-            x_image, y_image = sc.canvas2image(canvas_x, canvas_y)
+            x_image, y_image = sc.canvas_to_image((canvas_x, canvas_y))
             lat, long = gmi.pixelToLatLong((x_image, y_image))
             x_dist, y_dist = gmi.getPos(xY=(x_image, y_image), unit=unit)
         elif lat is not None:
@@ -41,20 +41,20 @@ class CanvasCoords:
             
             x_image, y_image = gmi.getXY(latLong=(lat,long))
             x_dist, y_dist = gmi.getPos(latLong=(lat,long), unit=unit)
-            canvas_x, canvas_y = sc.image2canvas(x_image,y_image)
+            canvas_x, canvas_y = sc.image_to_canvas((x_image,y_image))
         elif x_image is not None:
             if y_image is None:
                 raise SelectError("x_image with no y_image")
             
             x_dist, y_dist = gmi.getPos(xY=(x_image,y_image), unit=unit)
-            canvas_x, canvas_y = sc.image2canvas(x_image, y_image)
+            canvas_x, canvas_y = sc.image_to_canvas((x_image, y_image))
             lat, long = gmi.getLatLong(xY=(x_image,y_image))
         elif x_dist is not None:
             if y_dist is None:
                 raise SelectError("x_dist and no y_dist")
             
             x_image, y_image = gmi.getXY(pos=(x_dist,y_dist), unit=unit)
-            canvas_x, canvas_y = sc.image2canvas(x_image, y_image)
+            canvas_x, canvas_y = sc.image_to_canvas((x_image, y_image))
             lat, long = gmi.getLatLong(xY=(x_image,y_image))
         else:
             if canvas_y is not None:

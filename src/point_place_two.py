@@ -8,6 +8,7 @@ from math import sqrt
 
 from select_trace import SlTrace
 from canvas_coords import CanvasCoords
+from GeoDraw import get_bearing
 
 class PointPlaceTwo(Toplevel):
     ID_PREFIX = "PP_"       # Unique tracking type prefix
@@ -76,6 +77,10 @@ class PointPlaceTwo(Toplevel):
     COL_POINT_NAMES_LABEL = COL_LAT_LABEL
     COL_POINT1_NAME = COL_POINT_NAMES_LABEL+1
     COL_POINT2_NAME = COL_POINT1_NAME + 1
+    
+    ROW_P1_P2_HEADING_LABEL = ROW_POINT_NAMES
+    COL_P1_P2_HEADING_LABEL = COL_POINT2_NAME + 1
+    COL_P1_P2_HEADING = COL_P1_P2_HEADING_LABEL + 1
 
     ROW_SET_POINTS = ROW_POINT_NAMES + 1
     COL_SET_POINTS = COL_POINT2_NAME + 1
@@ -292,6 +297,17 @@ class PointPlaceTwo(Toplevel):
         self.ctls_ctls[field] = entry = Entry(ctl_frame, textvariable=content, width=width)
         entry.grid(row=PointPlaceTwo.ROW_POINT_NAMES, column=PointPlaceTwo.COL_POINT2_NAME, sticky=W)
         self.set_ctl_val(field, "P2")
+
+        field = "p1_p2_heading"
+        width = self.ll_width
+        self.ctls_vars[field] = content = StringVar()
+        Label(master=ctl_frame, text="P1-P2 Heading").grid(
+            row=PointPlaceTwo.ROW_P1_P2_HEADING_LABEL,
+            column=PointPlaceTwo.COL_P1_P2_HEADING_LABEL)
+        self.ctls_ctls[field] = entry = Entry(ctl_frame, textvariable=content, width=width)
+        entry.grid(row=PointPlaceTwo.ROW_P1_P2_HEADING_LABEL,
+                   column=PointPlaceTwo.COL_P1_P2_HEADING, sticky=W)
+
         
         field = "set_points"
         self.ctls_vars[field] = content = StringVar()
@@ -371,6 +387,10 @@ class PointPlaceTwo(Toplevel):
             canvas_dist = sqrt((p2c.canvas_x-p1c.canvas_x)**2
                                +(p2c.canvas_y-p1c.canvas_y)**2)
             self.set_ctl_val("canvas_dist", canvas_dist, fmt=self.px_fmt)
+            
+            p1_p2_heading = get_bearing(p1,p2)
+            self.set_ctl_val("p1_p2_heading", p1_p2_heading, fmt=self.ll_fmt)
+
         self.update_connection() 
 
     def redisplay(self):

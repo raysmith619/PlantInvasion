@@ -20,6 +20,7 @@ from survey_point import SurveyPoint
 from tracking_control import TrackingControl
 from canvas_coords import CanvasCoords
 from GoogleMapImage import GoogleMapImage
+from GeoDraw import GeoDraw
 import scrolled_canvas
 from compass_rose import CompassRose
 
@@ -64,6 +65,7 @@ class SurveyPointManager:
     """ Manipulate a list of points (SurveyPoint)
     """
     def __init__(self, scanvas,
+                 compass_rose=None,
                  label=None, label_size=None,
                  display_size=None, select_size=None,
                  point_type=None, center_color=None, color=None, label_no=None,
@@ -73,6 +75,9 @@ class SurveyPointManager:
                  unit="m"):
         """ Setup point attributes
         :scanvas: canvas (ScrollableCanvas) on which points are positioned/displayed
+        :compassRose: North indicator (location x-fract, y-fract, size-fract)
+                    -1 => no compassRose
+                    defalult: standard size/placement
         :display_size, select_size, point_type, center_color, color - default point attributes
                 described in SurveyPoint
         :label_no: starting number for point labels <label><label_no>
@@ -83,8 +88,8 @@ class SurveyPointManager:
         """
                        
         self.sc = scanvas
+        self.compass_rose = CompassRose(compass_rose).live_obj()
         self.trailfile = trailfile
-        self.compass_rose = CompassRose(present=False)    
         self.trail = None                   # Currently loaded trail
         self.trail_segment = None           # Currently processed trail segment
         self.mapped_regions = []            # canvases of regions displayed
@@ -161,6 +166,8 @@ class SurveyPointManager:
         """
         for point in self.points:
             point.redisplay()
+        if self.compass_rose is not None:
+            self.overlayCompassRose()
         self.tr_ctl.redisplay()
 
     def get_region(self): 
@@ -219,10 +226,14 @@ class SurveyPointManager:
         region_sc.size_image_to_canvas()
         return True
 
-    def rotate_map(self):
+    def rotate_map(self, deg=None, incr=False, expand=None):
         """ Interactively rotate map in main display
         """
-        mr = MapRotator(self)
+        gmi = self.get_gmi()
+        image = gmi.rotateMap(deg=deg, incr=incr, expand=expand)
+        self.sc.update_image(image)
+        self.sc.size_image_to_canvas()
+        self.redisplay()
             
     def select_region(self):
         """ select most recently created region, if one
@@ -394,7 +405,28 @@ class SurveyPointManager:
         for pt in self.points:
             pt.delete()
         self.reset_points()
-                    
+
+    def create_circle(self, xY, radius=None, **kwargs):
+        """ create circle on canvas
+        :xY: x,y center in pixels
+        :radius: radius in pixels
+        :fill: color
+                default: "red"
+        :returns: canvas object tag
+        """
+        canvas = self.get_canvas()
+        if canvas is None:
+            return
+        
+        if radius is None:
+            radius = 2
+            
+        x, y = xY[0], xY[1]
+        x1, y1 = x-radius, y-radius
+        x2, y2 = x+radius, y+radius
+        tag = canvas.create_oval(x1, y1, x2, y2, **kwargs)
+        return tag
+        
     def add_point(self, point, track=True):
         """ Add new point to list
         Checks for unique name - error if pre-existing named point
@@ -543,6 +575,15 @@ class SurveyPointManager:
         :returns: our point list
         """
         return self.points
+
+    def get_mapRotate(self):
+        """ Get current map rotation 0<= deg < 360
+        """
+        gmi = self.get_gmi()
+        if gmi is None:
+            return 0
+        
+        return gmi.get_mapRotate()
     
     def get_point_labeled(self, label):
         """ Get point named (label)
@@ -570,7 +611,7 @@ class SurveyPointManager:
         return points_in
 
             
-    def overlayCompassRose(self, compassRose):
+    def overlayCompassRose(self, compassRose=None):
         """
         Add orientation marker
         Like GeoDraw.add..., but overlay, to allow modification
@@ -578,49 +619,59 @@ class SurveyPointManager:
         :returns: list of tags created
         :compassRose: (x_fract, y_fract, len_fract) of x,y, length(smallest)
         """
-        SlTrace.lg("addCompassRose")
-        gmi = self.get_gmi()
+        SlTrace.lg("overlayCompassRose", "compass_rose")
         canvas = self.get_canvas()
-        if self.compass_rose.present and self.compass_rose.tags:
-            self.canvas.delete(self.compas_rose.tags)
-            self.compas_rose.tags = []
+        if canvas is None:
+            return
+        
+        gmi = self.get_gmi()
         if compassRose is not None:
-            self.compass_rose = CompassRose(x_fract = compassRose[0],
-                                            y_fract = compassRose[1],
-                                            len_fract = compassRose[2],
-                                            present=True)
+            self.compass_rose = CompassRose(compassRose).live_obj()
+        if self.compass_rose is None:
+            return
+        
         cro = self.compass_rose
-        xFraction = cro.x_fract
-        yFraction = cro.y_fract
-        lenFraction = cro.len_ftact
-        mx = gmi.getWidth() * xFraction
-        my = gmi.getHeight() * yFraction
-        arrow_len = sqrt(gmi.getWidth()**2 + gmi.getHeight()**2) * lenFraction
-        cent_color = (255,0,0)
-        xY = (mx,my)
-        gmi.circle(xY=xY, radius=5, fill=cent_color)
-        north_deg = 90.     # Default map north
-        arrow_color = (100,255,100, 126)
-        arrow_width = gmi.adjWidthBySize(4)
-        tag = self.lineSeg(xY=xY, leng=arrow_len, deg=north_deg, fill=arrow_color, width=arrow_width)
-        cro.tags.append(tag)
-        arrow_point_xy = gmi.addToPoint(xY=xY, leng=arrow_len, deg=north_deg)
-        arrow_head_width = int(1.2*arrow_width)
-        head_len = arrow_len/5.
-        left_edge_deg = north_deg-20. - 180.
-        tag = self.lineSeg(xY=arrow_point_xy, leng=head_len, deg=left_edge_deg,
-                      fill=arrow_color, width=arrow_head_width)
-        cro.tags.append(tag)
-        right_edge_deg = north_deg+20. - 180.
-        tag = self.lineSeg(xY=arrow_point_xy, leng=head_len, deg=right_edge_deg,
-                      fill=arrow_color, width=arrow_head_width)
+        x_fract = cro.x_fract
+        y_fract = cro.y_fract
+        lenFraction = cro.len_fract * 10
+        canvas_width = self.get_canvas_width()
+        canvas_height = self.get_canvas_height()
+        canvas_x =  int(canvas_width * x_fract)
+        canvas_y = int(canvas_height * y_fract)
+        cc_cent = self.get_canvas_coords(canvas_x=canvas_x, canvas_y=canvas_y)
+        arrow_len = int(sqrt(canvas_width**2 + canvas_height**2) * lenFraction)
+        arrow_len_m = gmi.pixelToMeter(arrow_len)
+        cent_color = "red"
+        cr_circle = self.create_circle((canvas_x,canvas_y), radius=5, fill=cent_color)
+        cro.tags.append(cr_circle)
+        north_deg = GeoDraw.NORTH_DEG     # Default map north
+        arrow_color = "green"
+        arrow_width = 3
+        x_image = cc_cent.x_image
+        y_image = cc_cent.y_image
+        apt_image = gmi.addToPoint(leng=arrow_len_m, xY=(x_image,y_image),
+                                   deg=north_deg, unit="m")
+        apt_image_x, apt_image_y = apt_image
+        cc_ap = self.get_canvas_coords(x_image=apt_image_x,
+                                       y_image=apt_image_y)
+        apt_canvas_x = cc_ap.canvas_x
+        apt_canvas_y = cc_ap.canvas_y
+        tag = canvas.create_line(canvas_x,canvas_y, apt_canvas_x, apt_canvas_y,
+                                 arrow="last",
+                                 arrowshape=(3*arrow_width,4*arrow_width,
+                                            2*arrow_width),
+                                 fill=arrow_color, width=arrow_width)
         cro.tags.append(tag)
         # North Label
         label_size = 16
-        north_label_font = font.Font("Helvetica", size=label_size)
-        label_pt = gmi.addToPoint(xY=arrow_point_xy, leng=label_size+10, deg=north_deg)
-
-        tag = self.text("North", xY=label_pt, font=north_label_font, fill=arrow_color)
+        north_label_font = ("Helvetica", label_size)
+        text_off_x = label_size
+        text_off_y = text_off_x
+        apt_text_x = apt_canvas_x + text_off_x
+        apt_text_y = apt_canvas_y - text_off_y
+        apt_text_pos = (apt_text_x, apt_text_y)
+        tag = canvas.create_text(apt_text_pos, text = "North",
+                                 font=north_label_font, fill=arrow_color)
         cro.tags.append(tag)
 
 
@@ -769,6 +820,23 @@ class SurveyPointManager:
         """ Shorthand to get CanvasCoords
         """
         return CanvasCoords(self.sc, **kwargs)
+
+    
+    def ll_to_canvas(self, lat=None, long=None):
+        return self.sc.ll_to_canvas(lat=lat, long=long)
+    
+
+    def get_canvas_height(self):
+        """ Get our canvas width in pixels
+        :returns: width in pixelst
+        """
+        return self.sc.get_canvas_height()
+
+    def get_canvas_width(self):
+        """ Get our canvas width in pixels
+        :returns: width in pixelst
+        """
+        return self.sc.get_canvas_width()
     
     def getHeight(self):
         """ via GoogleMapImage
