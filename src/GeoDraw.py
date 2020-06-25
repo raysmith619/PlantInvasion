@@ -972,7 +972,7 @@ class GeoDraw:
         else:
             delta_x = leng
             delta_y = 0.
-        return xY[0]+delta_x, xY[1]+delta_y
+        return xY[0]+self.meterToMx(delta_x), xY[1]+self.meterToMy(delta_y)
 
 
     def adjWidthBySize(self, lineWidth):
@@ -1068,6 +1068,33 @@ class GeoDraw:
         """
         return self.image.width
 
+    def getXFract(self, x_image):
+        """ fraction of width
+        :x_image: x pixels
+        """
+        return x_image/self.getWidth()
+
+    def getYFract(self, y_image):
+        """ fraction of image height
+        y_image: x pixels
+        """
+        return y_image/self.getHeight()
+
+    def getLatFract(self, lat):
+        """ fraction of latitude width
+        :latitude: latitude
+        """
+        lat_height = self.ulLat - self.lrLat
+        lat_offset = self.ulLat - lat
+        return lat_offset/lat_height
+
+    def getLongFract(self, long):
+        """ fraction of latitude width
+        :latitude: latitude
+        """
+        long_height = self.ulLong - self.lrLong
+        long_offset = self.ulLong - long
+        return long_offset/long_height
 
     def getLatLong(self, latLong=None, pos=None, xY=None, unit=None):
         """
@@ -1162,7 +1189,8 @@ class GeoDraw:
     def latLongToPixel(self, latLong):
         """
         Convert latitude, longitude to pixel location on image
-        1. Rotate from mapRotate to North Facing
+        1. NO Need to Rotate from mapRotate to North Facing,
+             since already image already alligned with North
         2. Scale from longLat to x,y pixel
         3. Rotate back to mapRotate
         :returns: x,y pixels
@@ -1175,14 +1203,16 @@ class GeoDraw:
         long = latLong[1]
         lat_offset = self.ulLat - lat         # from upper left corner - latitude decreases down, offset increases down
         long_offset = long - self.ulLong      # increase left to right
+
         long_offset, lat_offset = self.rotate_xy(       # Returns: x-offset(longitude),
                                                         #          y-offset(latitude)
                     x=long_offset, y=lat_offset,
                     width=self.long_width, height=self.lat_height,
                     deg=-self.get_mapRotate())
+
         mx = long_offset/self.long_width*self.getWidth()
         my = lat_offset/self.lat_height*self.getHeight()
-        
+
         mx, my = self.rotate_xy(x=mx, y=my,
                             width=self.getWidth(), height=self.getHeight(),
                             deg=self.get_mapRotate())
@@ -1403,12 +1433,35 @@ class GeoDraw:
         self.mapRotate = to_deg
         to_deg = self.get_mapRotate()   # Normalize
         self.mapRotate = to_deg         # Store normaized
-        from_orig_deg = to_deg - mapRotateOriginal    
-
-        im = self.imageOriginal.rotate(from_orig_deg, expand=expand)
+        from_orig_deg = to_deg - mapRotateOriginal
+        im_orig = self.imageOriginal.copy()
+        self.setImage(im_orig)    
+        im = im_orig.rotate(from_orig_deg, expand=expand)
         self.setImage(im)
         return im
 
+    def mark_image(self):
+        """ Mark image for diagnostics
+            with a temporary overlay (not in image)
+        """
+        if SlTrace.trace("mark_image"):
+            if hasattr(self, "mki_tags"):
+                if self.mki_tags:
+                    for tag in self.mki_tags:
+                        pass
+            mi_color = "red"
+            mi_width=4
+            w = self.getWidth()
+            h = self.getHeight()
+            pt1 = (w/2, 0)
+            pt2 = (w/2, h)
+            self.line([pt1, pt2], fill=mi_color, width=mi_width)
+            pt3 = (0, h/2)
+            pt4 = (w, h/2)
+            self.line([pt3, pt4], fill=mi_color, width=4)
+            pts = [(0,0), (w,0), (w,h/2), (w,h), (0,h), (0,0)]
+            self.line(pts, fill=mi_color, width=mi_width+2)
+        
     def rotatePoints(self, points, rotate=None):
         """
         Rotate points

@@ -166,10 +166,9 @@ class SurveyPoint:
         if not self.displayed:          # Do after in case state changed
             return
         
-        pc = self.get_canvas_coords()
         if self.point_type == SurveyPoint.POINT_TYPE_CIRCLE:
             w = h = self.display_size
-            x, y = self.ll_to_canvas()
+            x, y = self.ll_to_canvas(trace=SlTrace.trace("ll_to_canvas"))
             hw = w/2.
             hh = h/2.
             x0 = x - hw
@@ -191,12 +190,19 @@ class SurveyPoint:
             kwargs['long'] = self.long
         return self.mgr.get_canvas_coords(**kwargs)
     
-    def ll_to_canvas(self, lat=None, long=None):
+    def ll_to_canvas(self, lat=None, long=None, trace=False):
+        """ Convert Lat/Long to canvas x,y
+        :lat: latitude
+        :long: Longitude
+        :trace: trace operation - Debugging
+        """
         if lat is None:
             lat = self.lat
         if long is None:
             long = self.long
-        return self.mgr.ll_to_canvas(lat=lat, long=long)
+        if trace and SlTrace.trace("ll_to_canvas"):
+            SlTrace.lg(f"\n{self.label} rot: {self.mgr.get_mapRotate()}")
+        return self.mgr.ll_to_canvas(lat=lat, long=long, trace=trace)
             
     def display_label(self):
         """ Display label part

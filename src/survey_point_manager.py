@@ -164,6 +164,8 @@ class SurveyPointManager:
         """ Redisplay points, tracking connections
         everything that resize might change
         """
+        gd = self.get_gmi().geoDraw
+        gd.mark_image()
         for point in self.points:
             point.redisplay()
         if self.compass_rose is not None:
@@ -233,6 +235,7 @@ class SurveyPointManager:
         image = gmi.rotateMap(deg=deg, incr=incr, expand=expand)
         self.sc.update_image(image)
         self.sc.size_image_to_canvas()
+        self.sc.mark_canvas()
         self.redisplay()
             
     def select_region(self):
@@ -303,15 +306,15 @@ class SurveyPointManager:
         :canvas_x: canvas x-coordinate
         :canvas_y: canvas y-coordinate
         """
-        pc = CanvasCoords(self.sc, canvas_x=canvas_x, canvas_y=canvas_y)
+        pc_lat, pc_long = self.sc.canvas_to_ll(canvas_x=canvas_x, canvas_y=canvas_y)
         SlTrace.lg(f"mouse_down: canvas_x={canvas_x:.0f} canvas_y={canvas_y:.0f}", "mouse")
-        point = self.get_in(lat=pc.lat, long=pc.long)
+        point = self.get_in(lat=pc_lat, long=pc_long)
         if point is not None:
             self.in_point_is_down = True
             self.in_point = point
-            self.in_point_start = (pc.lat, pc.long)  # ref for movement
+            self.in_point_start = (pc_lat, pc_long)  # ref for movement
         else:
-            point = self.make_point(lat=pc.lat, long=pc.long)
+            point = self.make_point(lat=pc_lat, long=pc_long)
  
     def make_point(self, lat=None, long=None):
         """ Create appropriate point for mouse click with current tracking state
@@ -516,9 +519,10 @@ class SurveyPointManager:
         if os.path.exists(mapfile):
             SlTrace.report(f"File {mapfile} already exists")
         
-        self.set_image()            # Set image updated  with overlays
-        gmi.save(mapfile)   
-            
+        self.set_image()   
+                        # Set image updated  with overlays
+        gmi.save(mapfile)
+        
     def save_trail_file(self, trailfile=None):
         """ Save updated trail file (From get_point_list("trails")
         :trailfile: trail file name
@@ -623,7 +627,7 @@ class SurveyPointManager:
         canvas = self.get_canvas()
         if canvas is None:
             return
-        
+        sc = self.sc
         gmi = self.get_gmi()
         if compassRose is not None:
             self.compass_rose = CompassRose(compassRose).live_obj()
@@ -631,14 +635,17 @@ class SurveyPointManager:
             return
         
         cro = self.compass_rose
+        if cro.tags:
+            for tag in cro.tags:
+                canvas.delete(tag)
+            cro.tags = []
         x_fract = cro.x_fract
         y_fract = cro.y_fract
-        lenFraction = cro.len_fract * 10
+        lenFraction = cro.len_fract * 1
         canvas_width = self.get_canvas_width()
         canvas_height = self.get_canvas_height()
         canvas_x =  int(canvas_width * x_fract)
         canvas_y = int(canvas_height * y_fract)
-        cc_cent = self.get_canvas_coords(canvas_x=canvas_x, canvas_y=canvas_y)
         arrow_len = int(sqrt(canvas_width**2 + canvas_height**2) * lenFraction)
         arrow_len_m = gmi.pixelToMeter(arrow_len)
         cent_color = "red"
@@ -647,15 +654,12 @@ class SurveyPointManager:
         north_deg = GeoDraw.NORTH_DEG     # Default map north
         arrow_color = "green"
         arrow_width = 3
-        x_image = cc_cent.x_image
-        y_image = cc_cent.y_image
+        x_image, y_image = sc.canvas_to_image(canvas_x, canvas_y)
         apt_image = gmi.addToPoint(leng=arrow_len_m, xY=(x_image,y_image),
                                    deg=north_deg, unit="m")
         apt_image_x, apt_image_y = apt_image
-        cc_ap = self.get_canvas_coords(x_image=apt_image_x,
-                                       y_image=apt_image_y)
-        apt_canvas_x = cc_ap.canvas_x
-        apt_canvas_y = cc_ap.canvas_y
+        apt_canvas_x, apt_canvas_y = sc.image_to_canvas(apt_image_x,
+                                                        apt_image_y)
         tag = canvas.create_line(canvas_x,canvas_y, apt_canvas_x, apt_canvas_y,
                                  arrow="last",
                                  arrowshape=(3*arrow_width,4*arrow_width,
@@ -821,9 +825,27 @@ class SurveyPointManager:
         """
         return CanvasCoords(self.sc, **kwargs)
 
+    def leave(self):
+        """ Process cursor leaving canvas
+        """
+        if self.sc_point_place is not None:
+            self.sc_point_place.remove_show_point()
+            
     
-    def ll_to_canvas(self, lat=None, long=None):
-        return self.sc.ll_to_canvas(lat=lat, long=long)
+    def ll_to_canvas(self, lat=None, long=None, trace=False):
+        """ Convert Lat/Long to canvas x,y
+        Transformation:
+            1. Scale lat/Long offsets to unrotated canvas x,y Note that image has been
+            resized to canvas.
+            2. Rotate x,y to mapRotate
+            
+        Part of single purpose functions, replacing CanvasCoords
+        
+        :lat: latitude
+        :long: Longitude
+        :trace: trace operation - Debugging
+        """
+        return self.sc.ll_to_canvas(lat=lat, long=long, trace=trace)
     
 
     def get_canvas_height(self):

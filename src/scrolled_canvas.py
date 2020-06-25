@@ -69,6 +69,7 @@ class ScrolledCanvas(Frame):
         self.gmi = None
         self.image = None
         self.no_op = no_op
+        self.cv_mark_tags = []    # Diagostic markings for canvas
         if no_op:
             return                  # Not a really functioning canvas, just a place holder 
         
@@ -129,7 +130,13 @@ class ScrolledCanvas(Frame):
         """ Get canvas width
         """
         return self.canv.winfo_width()
-    
+
+    def getXFract(self, canvas_x):
+        return canvas_x/self.get_width()
+
+    def getYFract(self, canvas_y):
+        return canvas_y/self.get_height()
+        
     def set_image(self):
         """ Set image, in preparation to save completed graphics file
         In genera, copy objects like trails which are canvas based objects to
@@ -140,10 +147,11 @@ class ScrolledCanvas(Frame):
             return
         trail = mgr.trail
         if trail is not None:
-            trail.hide()
+            ###trail.hide()
             self.gmi.addTrail(mgr.trail, width=trail.width*1.85)
-            self.lower_image()
-            self.size_image_to_canvas()
+            ###self.canv.tag_raise(self.imgtag)
+            ###self.lower_image()
+            ###self.size_image_to_canvas()
 
     def set_pt_mgr(self, pt_mgr):
         """ Set  up link with pt_mgr
@@ -165,6 +173,8 @@ class ScrolledCanvas(Frame):
         self.update()                   # Insure sizing completed
         new_width = event.width
         new_height = event.height
+        new_width = new_height = min(new_width, new_height)
+        self.canv.configure(width=new_width, height=new_height)
         self.canvas_width = new_width
         self.canvas_height = new_height
         SlTrace.lg("new width=%d height=%d" % (new_width, new_height), "resize")
@@ -186,6 +196,7 @@ class ScrolledCanvas(Frame):
         self.imgtag=self.canv.create_image(0,0,anchor="nw",image=self.im2)
         self.lower_image()
         self.update()                   # Insure sizing completed
+        SlTrace.lg(f"size_image_to_canvas: width: {self.get_width()} height: {self.get_height()}", "resize")
         if self.resize_call is not None:
             self.resize_call()
             
@@ -214,27 +225,125 @@ class ScrolledCanvas(Frame):
         self.im2=PIL.ImageTk.PhotoImage(self.image)
         self.imgtag=self.canv.create_image(0,0,anchor="nw",image=self.im2)
 
-    def ll_to_canvas(self, lat=None, long=None):
-        """ Convert latitude/Longitude to canvas_x, canvas_y
-        :lat: latitude
-        :long: longitude
+    def ll_to_canvas(self, lat=None, long=None, trace=False):
+        """ Convert Lat/Long to canvas x,y
         Transformation:
             1. Scale lat/Long offsets to unrotated canvas x,y Note that image has been
             resized to canvas.
             2. Rotate x,y to mapRotate
             
         Part of single purpose functions, replacing CanvasCoords
+        
+        :lat: latitude
+        :long: Longitude
+        :trace: trace operation - Debugging
         """
-        x_image, y_image = self.gmi.getXY(latLong=(lat,long))
-        canvas_x, canvas_y = self.image_to_canvas((x_image,y_image))
-        cr_x, cr_y = self.gmi.rotate_xy(x=canvas_x, y=canvas_y,
-                                        width=self.get_canvas_width(),
-                                        height=self.get_canvas_height(),
-                                        deg=self.gmi.get_mapRotate())
-        return cr_x, cr_y
+        gmi = self.get_gmi()
+        sc = self
+        lat_fract = gmi.getLatFract(lat)
+        long_fract = gmi.getLongFract(long)
+        canvas_width = self.get_width()
+        canvas_height = self.get_height()
+        c_x = long_fract*canvas_width
+        c_y = lat_fract*canvas_height
+        canvas_x, canvas_y = gmi.rotate_xy(x=c_x, y=c_y,
+                                        width=canvas_width,
+                                        height=canvas_height,
+                                        deg=gmi.get_mapRotate())
+        ###canvas_x, canvas_y = x_image, y_image
+        if trace and SlTrace.trace("ll_to_canvas"):
+            ll_fmt = ".6f"
+            f_fmt = ".2f"
+            i_fmt = ".1f"
+            SlTrace.lg(f"lat:{lat:{ll_fmt}} lat_fract:{lat_fract:{f_fmt}}")
+            SlTrace.lg(f"long:{long:{ll_fmt}} long_fract:{long_fract:{f_fmt}}")
+            ###SlTrace.lg(f"x_image:{x_image:{i_fmt}} fract:{gmi.getXFract(x_image):{f_fmt}}"
+            ###           f"  width: {gmi.getWidth():{i_fmt}}")
+            ###SlTrace.lg(f"y_image:{y_image:{i_fmt}} fract:{self.getYFract(y_image):{f_fmt}}"
+            ###           f"  height: {gmi.getHeight():{i_fmt}}")
+            SlTrace.lg(f"canvas_x:{canvas_x:{i_fmt}} fract:{self.getXFract(canvas_x):{f_fmt}}"
+                       f"  width: {self.get_width():{i_fmt}}")
+            SlTrace.lg(f"canvas_y:{canvas_y:{i_fmt}} fract:{self.getYFract(canvas_y):{f_fmt}}"
+                       f"  height: {self.get_height():{i_fmt}}")
+        return canvas_x, canvas_y
+
+    def canvas_to_ll(self, canvas_x=None, canvas_y=None, trace=False):
+        """ Convert canvas x,y to Lat/Long
+        Transformation: TBD
+            
+        Part of single purpose functions, replacing CanvasCoords
+        
+        :canvas_x: x offset in canvas
+        :canvas_y: y offset (down) in canvas
+        :trace: trace operation - Debugging
+        """
+        gmi = self.get_gmi()
+        sc = self
+        x_image, y_image = sc.canvas_to_image((canvas_x, canvas_y))
+        lat, long = gmi.pixelToLatLong((x_image, y_image))
+        if trace and SlTrace.trace("ll_to_canvas"):
+            ll_fmt = ".6f"
+            f_fmt = ".2f"
+            i_fmt = ".1f"
+            lat_fract = gmi.getLatFract(lat)
+            long_fract = gmi.getLongFract(long)
+            SlTrace.lg(f"canvas_x:{canvas_x:{i_fmt}} fract:{self.getXFract(canvas_x):{f_fmt}}"
+                       f"  width: {self.get_width():{i_fmt}}")
+            SlTrace.lg(f"canvas_y:{canvas_y:{i_fmt}} fract:{self.getYFract(canvas_y):{f_fmt}}"
+                       f"  height: {self.get_height():{i_fmt}}")
+            SlTrace.lg(f"x_image:{x_image:{i_fmt}} fract:{gmi.getXFract(x_image):{f_fmt}}"
+                       f"  width: {gmi.getWidth():{i_fmt}}")
+            SlTrace.lg(f"y_image:{y_image:{i_fmt}} fract:{self.getYFract(y_image):{f_fmt}}"
+                       f"  height: {gmi.getHeight():{i_fmt}}")
+            SlTrace.lg(f"lat:{lat:{ll_fmt}} lat_fract:{lat_fract:{f_fmt}}")
+            SlTrace.lg(f"long:{long:{ll_fmt}} long_fract:{long_fract:{f_fmt}}")
+        return lat, long
         
     def lower_image(self):
         self.canv.lower(self.imgtag)
+
+
+    def mark_image_place(self):
+        """ Mark image, as seen in canvas, for diagnostics
+            with a temporary overlay (not in image)
+        """
+        if SlTrace.trace("mark_image"):
+            gd = self.get_gmi().geoDraw
+            canvas = self.canv
+            if hasattr(self, "mki_tags"):
+                if self.mki_tags:
+                    for tag in self.mki_tags:
+                        canvas.delete(tag)
+                self.mki_tags = []
+            mark_color = "purple"
+            mark_width = 4
+            w = gd.get_width()
+            h = gd.get_height()
+            p1_cx, p1_cy = w/2, 0
+            p2_cx, p2_cy = w/2, h
+            tag = canvas.create_line(
+                p1_cx, p1_cy, p2_cx, p2_cy,
+                fill=mark_color,
+                width=mark_width)
+            self.mki_tags.append(tag)
+            p3_cx, p3_cy = 0, h/2
+            p4_cx, p4_cy = w, h/2
+            tag = canvas.create_line(
+                p3_cx, p3_cy, p4_cx, p4_cy,
+                fill=mark_color,
+                width=mark_width)
+            self.mki_tags.append(tag)
+            pts = [(0,0), (w,0), (w,h/2), (w,h), (0,h), (0,0)]
+            for i in range(1,len(pts)):
+                p1_cx, p1_cy = pts[i-1][0], pts[i-1][1]
+                p2_cx, p2_cy = pts[i][0], pts[i][1]
+                tag = canvas.create_line(
+                    p1_cx, p1_cy, p2_cx, p2_cy,
+                    fill=mark_color,
+                    width=mark_width+1)
+                self.mki_tags.append(tag)
+        self.update()
+
     
     def scale(self, wscale, hscale):
         """
@@ -311,22 +420,30 @@ class ScrolledCanvas(Frame):
         canvas_y = y_image*canvas_height/image_height
         return (canvas_x, canvas_y)
 
-    def canvas_to_image(self, xY):
+    def canvas_to_image(self, *xY_or_x_y):
         """
         Convert  canvas pixel x,y to image pixel x,y
         1. Rotate from up facing to mapRotate
         2. Scale from canvas x,y pixel to image x,y pixel
         ??? 3. Rotate back to mapRotate
         Returning canvas x,y pair
+        :xY_or_x_y: canvas coordinates
+                1 arg-> canvas_xy tuple
+                2 args -> canva_x, canvas_y
+        :returns: x_image, y_image
         """
+        if len(xY_or_x_y) == 1:
+            canvas_x, canvas_y = xY_or_x_y[0] 
+        else:
+            canvas_x, canvas_y = xY_or_x_y[0], xY_or_x_y[1]
+
         gmi = self.get_gmi()
         mapRotate = gmi.get_mapRotate()
-        if xY is None:
+        if len(xY_or_x_y) == 0:
             raise SelectError("imageToCanvas: xY required")
         
         canvas_width = self.get_canvas_width()
         canvas_height = self.get_canvas_height()
-        canvas_x, canvas_y = xY 
         canvas_x, canvas_y = gmi.rotate_xy(
                             x=canvas_x, y=canvas_y,
                             width=canvas_width,
@@ -340,23 +457,32 @@ class ScrolledCanvas(Frame):
 
         return x_image, y_image
 
-    def image_to_canvas(self, xY):
+    def image_to_canvas(self, *xY_or_x_y):
         """
         Convert  image pixel x,y to canvas pixel x,y
         1. Rotate from mapRotate to up facing
         2. Scale from image x,y pixel to canvas x,y
+        :xY_or_x_y: image coordinates
+                1 arg-> xY tuple
+                2 args -> x, y
+        :returns: canvas_x, canvas_y
         """
+        if len(xY_or_x_y) == 1:
+            xY = xY_or_x_y[0]
+        else:
+            xY = xY_or_x_y[0], xY_or_x_y[1]
+            
         gmi = self.get_gmi()
         if gmi is None:
             return 0,0
         
-        if xY is None:
+        if len(xY_or_x_y) == 0:
             raise SelectError("imageToCanvas: xY required")
-
+        mapRotate = gmi.get_mapRotate()
         x_image, y_image = gmi.rotate_xy(x=xY[0], y=xY[1],
                             width=gmi.getWidth(),
                             height=gmi.getHeight(),
-                            deg=-gmi.get_mapRotate())
+                            deg=-mapRotate)
 
         image_width = self.gmi.getWidth()
         image_height = self.gmi.getHeight()
@@ -364,16 +490,16 @@ class ScrolledCanvas(Frame):
         canvas_height = self.get_canvas_height()
         canvas_x = x_image*canvas_width/image_width
         canvas_y = y_image*canvas_height/image_height
-        ''' No rotation back ???
-        canvas_x, canvas_y = self.rotate_xy(     # Returns: x right
+        ###''' No rotation back ???
+        canvas_x, canvas_y = gmi.rotate_xy(     # Returns: x right
                                                 #          y downwards
                                 x=canvas_x, y=canvas_y,
                                 width=canvas_width, height=canvas_height,
-                                mapRotate)
+                                deg=mapRotate)
 
         image_width = self.gmi.getWidth()
         image_height = self.gmi.getHeight()
-        '''
+        ###'''
         return canvas_x, canvas_y
 
 
@@ -427,7 +553,8 @@ class ScrolledCanvas(Frame):
         self.inside = False
         self.canv.config(cursor="")
         self.canv.unbind("<Motion>")
-        
+        if self.pt_mgr is not None:
+            self.pt_mgr.leave()
     
     def enter (self, event):
         SlTrace.lg("enter", "mouse")
@@ -503,10 +630,8 @@ class ScrolledCanvas(Frame):
             self.sbarV.forget()
             self.sbarV.destroy()
             self.sbarV = None
-            
         self.canvas_frame = Frame(self.canvas_container_frame)             # Deleted and restored when canvas is updated
         self.canvas_frame.pack(expand=YES, fill=BOTH)
-        self.image = image
         self.canv = Canvas(self.canvas_frame, relief=SUNKEN)
         self.canv.pack(expand=YES, fill=BOTH)
         
@@ -518,10 +643,11 @@ class ScrolledCanvas(Frame):
         self.canv_width = self.width = width
         self.canv_height = self.height = height
         SlTrace.lg("sizeWindow width=%d height=%d" % (width, height), "resize")
-        self.image = image.resize((width,height))
-        self.im2=PIL.ImageTk.PhotoImage(self.image)
+        self.im2=PIL.ImageTk.PhotoImage(image)
         self.imgtag=self.canv.create_image(0,0,anchor="nw",image=self.im2)
-
+        self.image = image.resize((width,height))
+        
+        '''
         self.sbarV = sbarV = Scrollbar(self, orient=VERTICAL)
         self.sbarH = sbarH = Scrollbar(self, orient=HORIZONTAL)
         
@@ -533,16 +659,53 @@ class ScrolledCanvas(Frame):
         
         sbarV.pack(side=RIGHT, fill=Y)
         sbarH.pack(side=BOTTOM, fill=X)
-
         self.canv.pack(side=LEFT, expand=YES, fill=BOTH)
+        SlTrace.lg(f"set_canvas: width: {self.get_width()} height: {self.get_height()}")
         self.canv.config(scrollregion=(0,0,width,height))
-
+        SlTrace.lg(f"set_canvas: width: {self.get_width()} height: {self.get_height()}")
+        '''
+        
         self.canv.bind ("<ButtonPress-1>", self.down)
         self.canv.bind ("<ButtonRelease-1>", self.up)
         self.canv.bind("<Double-Button-1>", self.double_down)
         self.canv.bind ( "<Enter>", self.enter)
         self.canv.bind ("<Leave>", self.leave)
         self.bind("<Configure>", self.on_resize)
+
+    def mark_canvas(self):
+        if SlTrace.trace("mark_canvas"):
+            if self.cv_mark_tags:
+                self.canv.delete(self.cv_mark_tags)
+                self.cv_mark_tags = []
+            canvas = self.canv
+            w = self.get_width()
+            h = self.get_height()
+            cv_mark_color = "blue"
+            cv_mark_width = 2
+            p1_cx, p1_cy = w/2, 0
+            p2_cx, p2_cy = w/2, h
+            tag = canvas.create_line(
+                p1_cx, p1_cy, p2_cx, p2_cy,
+                fill=cv_mark_color,
+                width=cv_mark_width)
+            self.cv_mark_tags.append(tag)
+            p3_cx, p3_cy = 0, h/2
+            p4_cx, p4_cy = w, h/2
+            tag = canvas.create_line(
+                p3_cx, p3_cy, p4_cx, p4_cy,
+                fill=cv_mark_color,
+                width=cv_mark_width)
+            self.cv_mark_tags.append(tag)
+            pts = [(0,0), (w,0), (w,h/2), (w,h), (0,h), (0,0)]
+            for i in range(1,len(pts)):
+                p1_cx, p1_cy = pts[i-1][0], pts[i-1][1]
+                p2_cx, p2_cy = pts[i][0], pts[i][1]
+                tag = canvas.create_line(
+                    p1_cx, p1_cy, p2_cx, p2_cy,
+                    fill=cv_mark_color,
+                    width=cv_mark_width+1)
+                self.cv_mark_tags.append(tag)
+        self.update()
 
     def update_file(self, fileName, **kwargs):
         """ Update file

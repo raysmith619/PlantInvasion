@@ -256,8 +256,10 @@ class MappingControl(SelectControlWindow):
         self.set_entry(field="rotate", label="Rotation",
                         value=map_rotate, width=6,
                         enter_command=self.rotate_enter)
-        self.set_entry(field="rotate_cur", label="Current", value=self.get_mapRotate(), width=5)
-
+        entry = self.set_entry(field="rotate_cur", label="Current",
+                                value=map_rotate, width=5)
+        if map_rotate != 0:
+            entry.config(bg="green")
         map_rotation_frame2 = Frame(location_frame)
         map_rotation_frame2.pack()
         self.set_fields(map_rotation_frame2, "map", "Incremental Rotation")
@@ -528,7 +530,14 @@ class MappingControl(SelectControlWindow):
             self.set_vals()
             deg = self.get_val_from_ctl("map.rotate")
         self.mgr.rotate_map(deg=deg, incr=incr)
-        self.set_ctl("map.rotate_cur", self.get_mapRotate())
+        map_rotate = self.get_mapRotate()
+        self.set_ctl("map.rotate_cur", map_rotate)
+        entry = self.get_ctl("map.rotate_cur")
+        if map_rotate != 0:
+            entry.config(bg="light green")
+        else:
+            entry.config(bg="light gray")
+
 
 
     def rotate_map_to(self, towards=None):

@@ -241,6 +241,7 @@ class GoogleMapImage:
                  lrLat=None, lrLong=None,
                  displayRotateChange=False,         # True create displays before and after rotate
                  forceNew=False,                    # Force get of new image
+                 forceSquare=False,
                  mapRotate=None,
                  mapPoints=None,                    # Draw map to include all points, when rotated
                                                     # SamplePoint
@@ -265,6 +266,9 @@ class GoogleMapImage:
                  unit='m'):
         """ Generate map image, given latitute, longitude of upper left
         and lower right corners
+        :forceSquare:    force image/display to be square
+                        False -leave as requested
+                        default: square
         :gmi: base map, from which we get the image
                 default: no base get info from else where
         :ulLat, ulLong:  Upper left corner latitude, Longitude of image
@@ -327,6 +331,7 @@ class GoogleMapImage:
         self.compass_rose = CompassRose(compassRose).live_obj()
         fmt_ll = ".6f"
         fmt_dist = ".1f"
+        self.forceSquare = forceSquare
         self.base_gmi = gmi
         self.unit = unit
         self.displayRotateChange = displayRotateChange
@@ -450,7 +455,19 @@ class GoogleMapImage:
                 SlTrace.lg("Map changes: ulLat=%.5f ulLong=%.5f lrLat=%.5f lrLong=%.5f" %
                                     (ulLat-self.display_ulLat, ulLong-self.display_ulLong,
                                       lrLat-self.display_lrLat, lrLong-self.display_lrLong))
-                
+            if self.forceSquare:
+                latDist = max(ulLat, lrLat) - min(ulLat, lrLat)
+                longDist = max(ulLong, lrLong) - min(ulLong, lrLong)
+                if abs(latDist-longDist) > 1e-6:
+                    SlTrace.lg(f"Squaring map from latDist:"
+                               f"{latDist:{fmt_ll}} longDist:{longDist:{fmt_ll}}")
+                    latDist = longDist = max(latDist, longDist)
+                    ulLat = centerLat + latDist/2
+                    ulLong = centerLong - longDist/2
+                    lrLat = centerLat - latDist
+                    lrLong = centerLong + longDist/2    
+                    SlTrace.lg(f" to latDist:"
+                               f"{latDist:{fmt_ll}} longDist:{longDist:{fmt_ll}}")
             SlTrace.lg("GogleMapImage: ulLat=%.5f ulLong=%.5f lrLat=%.5f lrLong=%.5f" %
                                 (ulLat, ulLong, lrLat, lrLong))
             
@@ -612,7 +629,19 @@ class GoogleMapImage:
         Get/Convert location pixel, longitude, physical location/specification
         to pixel location
         """
-        return self.geoDraw.getXY(latLong=latLong, pos=pos, xY=xY, unit=None)
+        return self.geoDraw.getXY(latLong=latLong, pos=pos, xY=xY, unit=unit)
+
+    def getXFract(self, x_image):
+        """ fraction of width
+        :x_image: x pixels
+        """
+        return self.geoDraw.getXFract(x_image)
+
+    def getYFract(self, y_image):
+        """ fraction of image height
+        y_image: x pixels
+        """
+        return self.geoDraw.getYFract(y_image)
 
     def get_mapRotate(self):
         """ Get current map rotation 0<= deg < 360
@@ -640,6 +669,17 @@ class GoogleMapImage:
 
         return self.geoDraw.getPos(latLong=latLong, pos=pos, xY=xY, unit=unit, ref_latLong=ref_latLong)
 
+    def getLatFract(self, lat):
+        """ fraction of latitude width
+        :latitude: latitude
+        """
+        return self.geoDraw.getLatFract(lat)
+
+    def getLongFract(self, long):
+        """ fraction of latitude width
+        :latitude: latitude
+        """
+        return self.geoDraw.getLongFract(long)
     
     def geoDist(self, latLong=None, latLong2=None, unit=None):
         """ Access to lat,long to distance

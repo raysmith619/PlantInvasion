@@ -10,6 +10,7 @@ import os
 
 from tkinter import *
 
+from crs_funs import *
 from select_trace import SlTrace
 from select_control_window import SelectControlWindow
 from point_place import PointPlace
@@ -109,6 +110,15 @@ class TrackingControl(SelectControlWindow):
         self.set_radio_button(field="auto_track", label="add to trail", value="add_to_trail",
                               command=self.change_auto_tracking)
         
+        points_control_frame = Frame(controls_frame)
+        self.set_fields(points_control_frame, "points_control", "Points")
+        self.set_button(points_control_frame, "clear_tracking", "Clear Tracking",
+                         command=self.clear_tracking)
+        self.set_button(points_control_frame, "remove_points", "Remove Points",
+                         command=self.delete_points)
+        self.set_button(points_control_frame, "clear_all_points", "Clear ALL Points",
+                         command=self.clear_points)
+        
         trail_control_frame = Frame(controls_frame)
         self.set_fields(trail_control_frame, "trail_control", "Trail")
         self.set_button(trail_control_frame, "show_trail_points", "Show Points",
@@ -129,10 +139,6 @@ class TrackingControl(SelectControlWindow):
                          command=self.show_region_trail_points)
         self.set_button(region_control_frame, "restart_region", "Restart Region",
                          command=self.restart_region)
-        self.set_button(region_control_frame, "clear_tracking", "Clear Tracking",
-                         command=self.clear_tracking)
-        self.set_button(region_control_frame, "clear_all_points", "Clear ALL Points",
-                         command=self.clear_points)
         
         single_point_frame = Frame(controls_frame)
         self.set_fields(single_point_frame, "single_point", title="Single Point")
@@ -197,6 +203,7 @@ class TrackingControl(SelectControlWindow):
         for tracked in self.tracked_items:
             tracked.destroy()
         self.tracked_items = []
+        self.current_region = None
             
     def redisplay(self):
         """ Clear tracking items
@@ -204,6 +211,10 @@ class TrackingControl(SelectControlWindow):
         for tracked in self.tracked_items:
             tracked.redisplay()
 
+    def leave(self):
+        """ Process cursor leaving canvas
+        """
+        
     def meterToPixel(self, meter):
         """ via GoogleMapImage
         """
@@ -485,6 +496,44 @@ class TrackingControl(SelectControlWindow):
                     self.mgr.add_point(track_point, track=False)
                 points.append(track_point)
         return (points, show_list)
+
+    def create_region_points(self):
+        """ Provide selection list,
+        Create region with selected points
+         """
+        x0 = 300
+        y0 = 400
+        width = 200
+        height = 400
+        labels = [pt.label for pt in self.mgr.points]
+        labels = dot_sorted(labels)
+        app = SelectList(title="Create Region", ckbox=True,
+                         items=labels,
+                         position=(x0, y0), size=(width, height))
+        delete_list = app.get_checked()
+        for delete_label in delete_list:
+            del_point = self.mgr.points_by_label[delete_label.lower()]
+            SlTrace.lg(f"delete point: {del_point}")
+            self.mgr.remove_point(del_point)
+
+    def delete_points(self):
+        """ Provide selection list,
+        delete selected points from view
+         """
+        x0 = 300
+        y0 = 400
+        width = 200
+        height = 400
+        labels = [pt.label for pt in self.mgr.points]
+        labels = dot_sorted(labels)
+        app = SelectList(title="Delete Points", ckbox=True,
+                         items=labels,
+                         position=(x0, y0), size=(width, height))
+        delete_list = app.get_checked()
+        for delete_label in delete_list:
+            del_point = self.mgr.points_by_label[delete_label.lower()]
+            SlTrace.lg(f"delete point: {del_point}")
+            self.mgr.remove_point(del_point)
 
     def delete_region_trail_points(self):
         """ Show region trail points, provide selection list,

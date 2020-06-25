@@ -281,14 +281,20 @@ class PointPlace(Toplevel):
     def change_cursor_info(self, cursor_info):
         self.cursor_info = cursor_info
 
+    def remove_show_point(self):
+        """ Remove point showing e.g. cursor
+        """
+        canvas = self.get_canvas()
+        if self.show_point_tag is not None:
+            canvas.delete(self.show_point_tag)
+            self.show_point_tag = None
+
     def show_point_at(self, canvas_x, canvas_y):
         if self.cursor_info == "none":
             return              # Not showing point
         
         canvas = self.get_canvas()
-        if self.show_point_tag is not None:
-            canvas.delete(self.show_point_tag)
-            self.show_point_tag = None
+        self.remove_show_point()
         char_size = 7
         text_fill = "white"
         text_size = 12

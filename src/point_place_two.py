@@ -372,8 +372,8 @@ class PointPlaceTwo(Toplevel):
             self.set_ctl_label("y_image", f"y({self.unit})")
             self.set_ctl_val("y_image", y_image, fmt=self.px_fmt)
             
-            image_dist = sqrt((p2c.canvas_x-p1c.canvas_x)**2
-                               +(p2c.canvas_y-p1c.canvas_y)**2)
+            image_dist = sqrt((p2c.x_image-p1c.x_image)**2
+                               +(p2c.y_image-p1c.y_image)**2)
             self.set_ctl_val("image_dist", image_dist, fmt=self.px_fmt)
             
             canvas_x = p2c.canvas_x - p1c.canvas_x
@@ -408,15 +408,15 @@ class PointPlaceTwo(Toplevel):
             return
         
         p1 = self.point1 
-        p1c = CanvasCoords(self.sc, lat=p1.lat, long=p1.long, unit=self.unit)
+        p1_canvas_x, p1_canvas_y = self.sc.ll_to_canvas(lat=p1.lat, long=p1.long)
         p2 = self.point2         
-        p2c = CanvasCoords(self.sc, lat=p2.lat, long=p2.long, unit=self.unit)
+        p2_canvas_x, p2_canvas_y = self.sc.ll_to_canvas(lat=p2.lat, long=p2.long)
         if self.connection_line == PointPlaceTwo.CONNECTION_LINE_NONE:
             return
         
         if self.connection_line == PointPlaceTwo.CONNECTION_LINE_LINE:
             self.connection_line_tag = canvas.create_line(
-                p1c.canvas_x, p1c.canvas_y, p2c.canvas_x, p2c.canvas_y,
+                p1_canvas_x, p1_canvas_y, p2_canvas_x, p2_canvas_y,
                 fill=self.connection_line_color,
                 width=self.connection_line_width)
         elif self.connection_line == PointPlaceTwo.CONNECTION_LINE_IBAR:

@@ -266,11 +266,7 @@ def add_compass_rose():
     if pt_mgr is None:
         return
     
-    gmi = pt_mgr.get_gmi()
-    if gmi is None:
-        return
-
-    gmi.addCompassRose()
+    pt_mgr.overlayCompassRose()
     
 def map_region():
     if pt_mgr is not None:
