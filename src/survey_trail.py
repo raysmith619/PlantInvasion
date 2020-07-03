@@ -37,7 +37,7 @@ class SurveyTrail:
         self.label_pattern = label_pattern
         self.color = color
         self.width = width      # in meters
-        self.line_width = int(mgr.meterToCanvasPixel(width))
+        self.line_width = int(mgr.meterToPixel(width))
 
         self.line_type = line_type
         self.display_monitor = display_monitor

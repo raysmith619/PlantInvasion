@@ -339,7 +339,7 @@ class GoogleMapImage:
         self.useOldFile = useOldFile
         self.expandRotate = expandRotate
         self.enlargeForRotate = enlargeForRotate
-        self.mapRotate = mapRotate
+        self.initial_mapRotate = mapRotate
         if (ulLat is not None or ulLong is not None
                 or lrLat is not None or lrLong is not None) and mapPoints is not None:
             raise SelectError("Use only one of ullat... or mapPoints")
@@ -368,7 +368,6 @@ class GoogleMapImage:
             self.ulLong = info["ulLong"]
             self.lrLat = info["lrLat"]
             self.lrLong = info["lrLong"]
-            self.image = image
         else:           # Canculate dimensions
             if (ulLat is not None and ulLong is not None
                   and lrLat is not None and lrLong is not None):
@@ -494,13 +493,13 @@ class GoogleMapImage:
                 file = self.makeFileName()
             self.file = file                # Save name, if specified
             if gmi is not None:
-                self.image = self.selectImage(gmi)
+                image = self.selectImage(gmi)
             else:
-                self.image = self.getImage()
-        self.geoDraw = GeoDraw(self.image,
+                image = self.getImage(mapRotate=mapRotate)
+        self.geoDraw = GeoDraw(image,
                                ulLat=self.ulLat, ulLong=self.ulLong,
                                lrLat=self.lrLat, lrLong=self.lrLong,
-                               mapRotate=self.mapRotate,
+                               mapRotate=mapRotate,
                                expandRotate=self.expandRotate,
                                unit=unit)
 
@@ -624,12 +623,12 @@ class GoogleMapImage:
 
 
 
-    def getXY(self, latLong=None, pos=None, xY=None, unit=None):
+    def getXY(self, latLong=None, pos=None, xY=None, xYFract=None, unit=None):
         """
         Get/Convert location pixel, longitude, physical location/specification
         to pixel location
         """
-        return self.geoDraw.getXY(latLong=latLong, pos=pos, xY=xY, unit=unit)
+        return self.geoDraw.getXY(latLong=latLong, pos=pos, xY=xY, xYFract=xYFract, unit=unit)
 
     def getXFract(self, x_image):
         """ fraction of width
@@ -647,7 +646,7 @@ class GoogleMapImage:
         """ Get current map rotation 0<= deg < 360
         """
         if not hasattr(self, "geoDraw"):
-            return self.mapRotate               # Only for pre-geoDraw setup
+            return self.initial_mapRotate               # Only for pre-geoDraw setup
         
         return self.geoDraw.get_mapRotate()
     
@@ -727,8 +726,15 @@ class GoogleMapImage:
         return geoDraw.addToPointLL(leng=leng, xY=xY, pos=pos, latLong=latLong,
                                        theta=theta, deg=deg, unit=unit)
 
+    def get_geoDraw(self):
+        return self.geoDraw
+    
+    def get_image(self):
+        """ Get image from geoDraw
+        """
+        return self.geoDraw.image
         
-    def getImage(self):
+    def getImage(self, mapRotate=None):
         """
         Get image, based on settings
         Note that the image may have been rotated and enlarged so as to fit in an image alligned with
@@ -736,10 +742,11 @@ class GoogleMapImage:
         Enlarge scan to allow rotation and subsequent clipping to specified region.  This is necessary
         because the GoogleMap interface supports only north facing scans
         
-        NOTE self.image and self.imageInfo are set here
+        NOTE self.imageInfo is set here
+        :retuns: image loaded, but not yet saved
         """
         if not self.forceNew and self.haveImageFile():
-            self.image, self.imageInfo = self.loadImageFile()
+            image, self.imageInfo = self.loadImageFile()
             ulLat = self.imageInfo['ulLat']
             ulLong = self.imageInfo['ulLong']
             lrLat = self.imageInfo['lrLat']
@@ -751,32 +758,32 @@ class GoogleMapImage:
             ulLat, ulLong = self.ulLat, self.ulLong
             lrLat, lrLong = self.lrLat, self.lrLong
             self.imageInfo = {}             # Startup info dictionary
-            self.image = self.getRawImage(ulLatLong=(ulLat, ulLong), lrLatLong=(lrLat, lrLong))
+            image = self.getRawImage(ulLatLong=(ulLat, ulLong), lrLatLong=(lrLat, lrLong))
             self.imageInfo['ulLat'] = ulLat
             self.imageInfo['ulLong'] = ulLong
             self.imageInfo['lrLat'] = lrLat
             self.imageInfo['lrLong'] = lrLong
-            self.imageInfo['mapRotate'] = self.get_mapRotate()
-            SlTrace.lg("image width=%.2f height=%.2f" % (self.image.width, self.image.height))
+            self.imageInfo['mapRotate'] = mapRotate
+            SlTrace.lg("image width=%.2f height=%.2f" % (image.width, image.height))
             rotate = 0 if self.imageInfo['mapRotate'] is None else self.imageInfo['mapRotate']
             SlTrace.lg("File image: ulLat:%.6f ulLong %.6f lrLat:%.6f lrLong %.6f mapRotate %.0f" %
                         (self.imageInfo['ulLat'], self.imageInfo['ulLong'],
                          self.imageInfo['lrLat'], self.imageInfo['lrLong'],
                          rotate))
                    
-            self.save()
-        SlTrace.lg("image width=%.2f height=%.2f" % (self.image.width, self.image.height))
+            self.save(image)
+        SlTrace.lg("image width=%.2f height=%.2f" % (image.width, image.height))
         
         # No need to change image
         if self.get_mapRotate() != 0:
             ###self.displayRotateChange = True     # TFD
             if self.displayRotateChange:
                 self.dbShow("before rotate")
-            self.image = self.image.rotate(self.get_mapRotate(), expand=self.expandRotate)
+            image = image.rotate(self.get_mapRotate(), expand=self.expandRotate)
             if self.displayRotateChange:
-                self.image.load()
+                image.load()
                 SlTrace.lg("Rotated image(%.0f) width=%.2f height=%.2f expand=%s" %
-                       (self.get_mapRotate(), self.image.width, self.image.height, self.expandRotate))
+                       (self.get_mapRotate(), image.width, image.height, self.expandRotate))
                 self.dbShow("after rotate")
                 SlTrace.lg("after show")
             
@@ -795,7 +802,7 @@ class GoogleMapImage:
             y_max = limitsXY['max_y']
             self.crop(box=(x_min, y_min, x_max, y_max))
             --- """
-        return self.image
+        return image
 
 
     def crop(self, box=None):
@@ -806,6 +813,15 @@ class GoogleMapImage:
         """
         self.geoDraw.crop(box=box)
 
+    def points_to_image(self, *pts_list, rotation=None):
+        """ Rotate points to, possibly, rotated image
+        :*pts: comma-separated point or list of points in unrotated image
+        :rotation: image rotation
+                default: current image rotation (deg) from map original
+        :returns: list of points in rotated image
+        """
+        return self.geoDraw.points_to_image(*pts_list, rotation=rotation)
+    
     def rotateMap(self, deg=None, incr=None, expand=None):
         """ rotate map, via GeoDraw
         """
@@ -827,12 +843,17 @@ class GoogleMapImage:
                         width=width, height=height,
                         deg=deg)
 
-    def save(self, name=None, hasInfo=True):
+    def save(self, image=None, name=None, hasInfo=True):
         """
         Save image to file
         If image file saved, then save as <filename_no_ext>_AUG.ext
         iff name is None - also save info fle
+        :image: image to save
+            default: geoDraw.image
+        :name: image file name
         """
+        if image is None:
+            image = self.get_image()
         if name is None:
             name = self.makeFileName()
         ext_pat = re.compile(r'(.*)\.([^.]+)$')
@@ -848,7 +869,7 @@ class GoogleMapImage:
             return
         
         try:
-            self.image.save(f)
+            image.save(f)
             
         except IOError as e:
             SlTrace.lg("Problem saving image name %s %s" % (name, e.get_message()))
@@ -978,14 +999,16 @@ class GoogleMapImage:
             name = base + "_AUG" + "." + ext    
             
         SlTrace.lg("Saving augmented image name %s" % name)
-        self.save(name, hasInfo=False)
+        self.save(self.get_image(), name, hasInfo=False)
         return name
         
-    def show(self):
+    def show(self, image=None):
         """
         Display image
         """
-        self.image.show()
+        if image is None:
+            image = self.get_image()
+        image.show()
 
     def dbShow(self, *texts, image=None, **kwargs):
         """
@@ -996,9 +1019,9 @@ class GoogleMapImage:
             self.geoDraw.dbShow(*texts, image=image, **kwargs)
         else:
             if image is None:
-                image = self.image
-            id = image.copy()
-            draw = ImageDraw.Draw(id)      # Setup ImageDraw access
+                image = self.get_image()
+            im = image.copy()
+            draw = ImageDraw.Draw(im)      # Setup ImageDraw access
             
             font_size = 58
             line_sp = font_size
@@ -1010,7 +1033,7 @@ class GoogleMapImage:
                 SlTrace.lg("show: " + text)
                 draw.text(xY, text, font=font, color=tcolor, **kwargs)
                 xY = (xY[0], xY[1] + line_sp)
-            id.show()
+            im.show()
 
     def destroy(self):
         """ Release resources
@@ -1119,11 +1142,11 @@ class GoogleMapImage:
         
         long_chg = abs(long - self.lrLong)
         long_size = self.longSize()
-        x_size = self.image.width
+        x_size = self.getWidth
         xpix = x_size - long_chg/long_size * x_size
         lat_chg = abs(lat - self.lrLat)
         lat_size = self.latSize()
-        y_size = self.image.height
+        y_size = self.getHeight
         ypix = y_size - lat_chg/lat_size * y_size    # yincreases down
         return xpix, ypix
 
@@ -1149,11 +1172,11 @@ class GoogleMapImage:
         Returning lat,long pair
         """
         
-        x_size = self.image.width
+        x_size = self.getWidth()
         long_size = self.longSize()
         long = self.ulLong + long_size*x/x_size 
         
-        y_size = self.image.height
+        y_size = self.getHeight()
         lat_size = self.latSize()
         lat = self.lrLat + (y_size-y)*lat_size/y_size
         return lat, long
@@ -1309,7 +1332,7 @@ class GoogleMapImage:
         """
         gmi_rotate = gmi.get_mapRotate()
         map_rotate = self.get_mapRotate()
-        gmi_image = gmi.image
+        gmi_image = gmi.get_image()
         if gmi_rotate is not None or map_rotate is not None:
             gmi_rotate = 0. if gmi_rotate is None else gmi_rotate
             map_rotate = 0. if map_rotate is None else map_rotate
@@ -1320,6 +1343,16 @@ class GoogleMapImage:
         lrX, lrY = gmi.getXY(latLong=(self.lrLat, self.lrLong))
         new_image = gmi_image.crop((ulX, ulY, lrX, lrY))
         return new_image
+    
+
+    def setImage(self, image):
+        """
+        Setup image and associated data
+        This should be called when ever the image is
+        created.
+        """
+        self.geoDraw.setImage(image)
+
 """
 Stanalone test / exercise:
 """

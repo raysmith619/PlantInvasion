@@ -399,9 +399,9 @@ class PointPlaceTwo(Toplevel):
     def update_connection(self):
         """ Update connection view between tracked point pairs
         """
-        canvas = self.get_canvas()
+        iodraw = self.get_iodraw()
         if self.connection_line_tag is not None:
-            canvas.delete(self.connection_line_tag)
+            iodraw.delete_tag(self.connection_line_tag)
             self.connection_line_tag = None
             
         if not self.visible:
@@ -415,9 +415,9 @@ class PointPlaceTwo(Toplevel):
             return
         
         if self.connection_line == PointPlaceTwo.CONNECTION_LINE_LINE:
-            self.connection_line_tag = canvas.create_line(
-                p1_canvas_x, p1_canvas_y, p2_canvas_x, p2_canvas_y,
-                fill=self.connection_line_color,
+            self.connection_line_tag = iodraw.drawLine(
+                (p1_canvas_x, p1_canvas_y), (p2_canvas_x, p2_canvas_y),
+                color=self.connection_line_color,
                 width=self.connection_line_width)
         elif self.connection_line == PointPlaceTwo.CONNECTION_LINE_IBAR:
             pass
@@ -466,12 +466,12 @@ class PointPlaceTwo(Toplevel):
         if self.show_point == PointPlaceTwo.SHOW_POINT_NONE:
             return              # Not showing point
         
-        canvas = self.get_canvas()
+        iodraw = self.get_iodraw()
         if self.show_point_tag is not None:
-            canvas.delete(self.show_point_tag)
+            iodraw.delete_tag(self.show_point_tag)
             self.show_point_tag = None
         char_size = 7
-        text_fill = "white"
+        text_color = "white"
         text_size = 12
                 
         x_image, y_image = self.canvas2image(x_pixel, y_pixel)
@@ -493,21 +493,21 @@ class PointPlaceTwo(Toplevel):
         text_y_off = text_x_off
         if x_pixel < text_push:
             text_x_off = text_push
-        elif x_pixel > canvas.winfo_width() - text_push:
+        elif x_pixel > iodraw.getWidth() - text_push:
             text_x_off = - text_push
-        if y_pixel > canvas.winfo_height() - text_push_v:
+        if y_pixel > iodraw.getHeight() - text_push_v:
             text_y_off = -1*text_push_v
         text_pos = (x_pixel+text_x_off, y_pixel+text_y_off)
             
-        self.show_point_tag = canvas.create_text(text_pos, text=text, fill=text_fill)
+        self.show_point_tag = iodraw.drawText(text_pos, text=text, color=text_color)
 
     def canvas2image(self, x_pixel, y_pixel):
         return self.sc.canvas2image(x_pixel, y_pixel)
 
-    def get_canvas(self):
-        """ Get our canvas
+    def get_iodraw(self):
+        """ Get our drawing object
         """
-        return self.sc.canv
+        return self.sc.get_iodraw()
      
     def set_canvas_xy(self, x_pixel, y_pixel):
         """ Set x,y canvas location, updating location display box
@@ -590,12 +590,12 @@ class PointPlaceTwo(Toplevel):
     def destroy(self):
         """ Release resources
         """
-        canvas = self.get_canvas()
-        if canvas is None:
+        iodraw = self.get_iodraw()
+        if iodraw is None:
             return
         
         if self.connection_line_tag is not None:
-            canvas.delete(self.connection_line_tag)
+            iodraw.delete_tag(self.connection_line_tag)
         if self.standalone and self.mw is not None:
             self.mw.destroy()
             self.mw = None
@@ -606,7 +606,7 @@ if __name__ == "__main__":
     from GoogleMapImage import GoogleMapImage
     from scrolled_canvas import ScrolledCanvas
     from point_place import PointPlace
-    from survey_point_manager import SurveyPointManager
+    from manage_survey_point import SurveyPointManager
     from survey_point import SurveyPoint
     ulLat = 42.3760002
     ulLong = -71.1773149

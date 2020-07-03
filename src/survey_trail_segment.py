@@ -1,4 +1,4 @@
-# survey_track.py    18May2020    crs
+# survey_trail_segment.py    18May2020    crs
 """ trail segment object similar, but simpler than SelectEdge (crs_dots)
 An edge is composed of a connected set of zero or more points
 """

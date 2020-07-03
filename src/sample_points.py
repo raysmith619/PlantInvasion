@@ -14,7 +14,7 @@ from PIL import Image, ImageDraw, ImageFont
 from select_trace import SlTrace
 from GoogleMapImage import GoogleMapImage, geoDistance
 from scrolled_canvas import ScrolledCanvas
-from survey_point_manager import SurveyPointManager 
+from manage_survey_point import SurveyPointManager 
 from survey_trail import SurveyTrail
 from sample_file import SamplePoint
 

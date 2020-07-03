@@ -211,7 +211,7 @@ class GeoDraw:
         :ulLong - Map's Upper left corner longitude
         :lrLat - Map's Lower right corner latitude
         :lrLong - Map's lower right corner longitude
-        mapRot - Map's rotation (in degrees, counter clockwise) from North (up)
+        :mapRotate: - Map's rotation (in degrees, counter clockwise) from North (up)
         mapPoints - points (latitude, longitude) included in map - minimum a perimeter
         :pos - drawing pen current position (x,y) in unit(meter)
         :latLong - drawing pen current location (latitude, longitude) in degrees
@@ -235,7 +235,7 @@ class GeoDraw:
         self.ulmy = ulmy
         self.lrmx = lrmx
         self.lrmy = lrmy
-        self.mapRotate = mapRotate
+        self.mapRotate = mapRotate              # Current rotation
         self.mapRotateOriginal = mapRotate      # record original
         self.expandRotate = expandRotate
         
@@ -244,16 +244,18 @@ class GeoDraw:
         if theta is not None:
             deg = theta/pi * 180
         self.deg = deg          #None - unrotated
-        if ulLat is not None:
-            self.ulLat = ulLat
-            self.ulLong = ulLong
-            self.lrLat = lrLat
-            self.lrLong = lrLong
+        if ulLat is None:
+            ulLat = ulLong = lrLat = lrLong = 0
+        else:
+            if lrX is not None:
+                raise SelectError("Only one of ulLat and lrX can be specified")
+            if ulLong is not None and lrY is not None:
+                raise SelectError("Only one of ulLong or lrY can be specified")
+        self.ulLat = ulLat
+        self.ulLong = ulLong
+        self.lrLat = lrLat
+        self.lrLong = lrLong
             
-        if ulLat is not None and lrX is not None:
-            raise SelectError("Only one of ulLat and lrX can be specified")
-        if ulLong is not None and lrY is not None:
-            raise SelectError("Only one of ulLong or lrY can be specified")
         
         if ulX is None: 
             """
@@ -342,7 +344,6 @@ class GeoDraw:
             lrLong += deg_chg
             return (ulLat,ulLong), (lrLat,lrLong)
             
- ###TBD
         nb_spec = 0
         if borderM is not None:
             nb_spec += 1
@@ -921,17 +922,24 @@ class GeoDraw:
         self.text(title, xY=title_xy, font=title_font, fill=title_color, **kwargs)
 
     
-    def addToPoint(self, leng=None, xY=None, pos=None, latLong=None, theta=None, deg=None, unit=None):
+    def addToPoint(self, leng=None, lengPix=None, xY=None, pos=None, latLong=None, theta=None, deg=None, unit=None):
         """
-        Add to point, returning adjusted point in pixels
+        Add to point (in unrotated image), returning adjusted point in pixels
         Add requested rotation (curDeg if None) to map rotation, if
         mapRotation is not None
         :leng: length in unit
+        :lengPix: length in pixels
         :unit: unit default: self.unit, meter
         """
-        if leng is None:
-            raise SelectError("leng is required")
-        if not isinstance(leng, float) and not isinstance(leng, int):
+        if leng is None and lengPix is None:
+            raise SelectError("leng/LengPix is required")
+        if leng is not None and lengPix is not None:
+            raise SelectError("Only one of leng/LengPix is allowed")
+        
+        if lengPix is not None:
+            leng = self.pixelToMeter(lengPix)
+            
+        if leng is not None and not isinstance(leng, float) and not isinstance(leng, int):
             raise SelectError(f"leng({leng} {type(leng)}) must be a float or int")
         
         if unit is None:
@@ -940,6 +948,7 @@ class GeoDraw:
             
         if theta is not None and deg is not None:
             raise SelectError("Only specify theta or deg")
+        
         if theta is not None:
             deg = theta / pi * 180
         if deg is None:
@@ -1141,9 +1150,9 @@ class GeoDraw:
         return x_out, y_out 
     
 
-    def getXY(self, latLong=None, pos=None, xY=None, unit=None):
+    def getXY(self, latLong=None, pos=None, xY=None, xYFract=None, unit=None):
         """
-        Get/Convert location pixel, longitude, physical location/specification
+        Get/Convert location pixel, map fraction, longitude, physical location/specification
         to pixel location
         """
         nloc_spec = 0
@@ -1154,14 +1163,18 @@ class GeoDraw:
             latLong = self.posToLatLong(pos)
         if xY is not None:
             nloc_spec += 1
+        if xYFract is not None:
+            nloc_spec += 1
         
         if nloc_spec > 1:
-            raise SelectError("May specify, at most, one of latLong, pos, or xY")
+            raise SelectError("May specify, at most, one of latLong, pos, or xY or xYFract")
         
         if latLong is not None:
             xY =  self.latLongToPixel(latLong)
         elif pos is not None:
             xY = self.posToPixel(pos, unit=unit)
+        elif xYFract is not None:
+            xY = (xYFract[0]*self.getWidth(), xYFract[1]*self.getHeight())
         if xY is None:
             xY = self.curXY
         return xY
@@ -1188,7 +1201,7 @@ class GeoDraw:
 
     def latLongToPixel(self, latLong):
         """
-        Convert latitude, longitude to pixel location on image
+        Convert latitude, longitude to pixel location on image (unrotated)
         1. NO Need to Rotate from mapRotate to North Facing,
              since already image already alligned with North
         2. Scale from longLat to x,y pixel
@@ -1223,8 +1236,9 @@ class GeoDraw:
             longchg = latLong2[1]-latLong[1]
             max_diff = 5e-3
             if abs(latchg) > max_diff or abs(longchg) > max_diff:
-                SlTrace.lg(f"latLongToPixel rot({self.get_mapRotate()}) not reversable: latchg:{latchg:.7} longchg:{longchg:.7}")
-                SlTrace.lg(f"    latLong:{latLong} latLong2:{latLong2}")
+                if SlTrace.trace("reversable_report"):
+                    SlTrace.lg(f"latLongToPixel rot({self.get_mapRotate()}) not reversable: latchg:{latchg:.7} longchg:{longchg:.7}")
+                    SlTrace.lg(f"    latLong:{latLong} latLong2:{latLong2}")
 
 
         self.in_latLongToPixel -= 1            
@@ -1233,7 +1247,7 @@ class GeoDraw:
 
     def pixelToLatLong(self, xY):
         """
-        Convert  pixel x,y to latitude, longitude
+        Convert  (unrotated image) pixel x,y  to latitude, longitude
         1. Rotate from mapRotate to North Facing
         2. Scale from x,y pixel to latLong
         3. Rotate back to mapRotate
@@ -1246,15 +1260,16 @@ class GeoDraw:
         
         mx, my = self.rotate_xy(x=xY[0], y=xY[1],
                             width=self.getWidth(), height=self.getHeight(),
-                            deg=-self.get_mapRotate())
+                            deg=-self.get_imageRotate())
         long_offset = mx * self.long_width / self.getWidth()
         lat_offset = my * self.lat_height / self.getHeight()
+        '''
         long_offset, lat_offset = self.rotate_xy(       # Returns: x (longitude offset) right
                                                         #          y (latitude offset) downwards
                                     x=long_offset, y=lat_offset,
                                     width=self.long_width, height=self.lat_height,
                                     deg=self.get_mapRotate())
-
+        '''
         lat = self.ulLat - lat_offset           # Offset down from upper left corner
         long = self.ulLong + long_offset
         if self.in_latLongToPixel == 0:
@@ -1262,8 +1277,9 @@ class GeoDraw:
             xchg = xY2[0]-xY1[0]
             ychg = xY2[1]-xY1[1]
             if abs(xchg) > 1e-7 or abs(ychg) > 1e-7:
-                SlTrace.lg(f"pixelToLat rot({self.get_mapRotate()}) not reversable: xchg:{xchg:.7} ychg:{ychg:.7}")
-                SlTrace.lg(f"    xY1:{xY1} xY2:{xY2}")
+                if SlTrace.trace("reversable_report"):
+                    SlTrace.lg(f"pixelToLat rot({self.get_mapRotate()}) not reversable: xchg:{xchg:.7} ychg:{ychg:.7}")
+                    SlTrace.lg(f"    xY1:{xY1} xY2:{xY2}")
 
         self.in_pixelToLatLong -= 1
         return lat, long
@@ -1274,8 +1290,8 @@ class GeoDraw:
          about the center (Width/2, Hight/2)
         :x: x value horizontal increasing to right
         :y: y value, vertical increasing to down
-        :width: x width default: self.lr
-        :height:  y height
+        :width: x width default: image width
+        :height:  y height    default: image height
         :deg: rotation, in degrees,
                 default: self.get_mapRotate()
         :returns: x,y updated by rotation
@@ -1288,7 +1304,7 @@ class GeoDraw:
         if width is None:
             width=self.getWidth()
         if height is None:
-            height=self.getHeight(),
+            height=self.getHeight()
 
         ox, oy = width/2, height/2
         px, py = x, y
@@ -1414,6 +1430,14 @@ class GeoDraw:
             xY = (0., 0.)
         self.curXY = xY
 
+    def get_imageRotate(self):
+        """ get current map rotate from original orientation
+        """
+        mapRotate = self.get_mapRotate()
+        mapRotateOriginal = 0 if self.mapRotateOriginal is None else self.mapRotateOriginal
+        imageRotate = mapRotate - mapRotateOriginal
+        return imageRotate
+        
 
     def rotateMap(self, deg, incr=True, expand=None):
         """
@@ -1424,8 +1448,7 @@ class GeoDraw:
             default: True - rotate from current
         :expand: expand image (defined) by PIL image
         """
-        mapRotate = self.get_mapRotate()
-        mapRotateOriginal = 0 if self.mapRotateOriginal is None else self.mapRotateOriginal
+        map_current = mapRotate = self.get_mapRotate()
         if incr:
             to_deg = mapRotate + deg
         else:
@@ -1433,12 +1456,10 @@ class GeoDraw:
         self.mapRotate = to_deg
         to_deg = self.get_mapRotate()   # Normalize
         self.mapRotate = to_deg         # Store normaized
-        from_orig_deg = to_deg - mapRotateOriginal
-        im_orig = self.imageOriginal.copy()
-        self.setImage(im_orig)    
-        im = im_orig.rotate(from_orig_deg, expand=expand)
+        from_current_deg = to_deg - map_current
+        im = self.image.rotate(from_current_deg, expand=expand)
         self.setImage(im)
-        return im
+        return im           # Just for immediate use, already stored
 
     def mark_image(self):
         """ Mark image for diagnostics
@@ -1491,6 +1512,28 @@ class GeoDraw:
         self.curDeg = deg
 
 
+    def drawCircle(self, xY=None, radius=None, color=None, **kwargs):
+        """
+        Draw circle at current location with radius, in pixels
+        """
+        if radius is None:
+            radius = 2
+        if color is not None:
+            kwargs['fill'] = color
+        for key in ['activeoutline', 'activefill', 'activewidth']:
+            if key in kwargs:
+                SlTrace.lg(f"geoDraw.drawCircle param {key} not supported - ignored")
+                del kwargs[key]
+        
+        x, y = xY
+        x0 = x - radius
+        y0 = y - radius
+        x1 = x0 + radius 
+        y1 = y0 + radius 
+        elp_cent = (x0, y0, x1, y1)
+        self.ellipse(elp_cent, **kwargs)
+
+
     def circle(self, xY=None, pos=None, latLong=None, radius=None, **kwargs):
         """
         Draw circle at current location with radius, in pixels
@@ -1504,12 +1547,35 @@ class GeoDraw:
         self.ellipse(elp_cent, **kwargs)
         
 
+    def points_to_image(self, *pts_list, rotation=None):
+        """ Rotate points to, possibly, rotated image
+        :*pts: comma-separated point or list of points in unrotated image
+        :rotation: image rotation
+                default: current image rotation (deg) from map original
+        :returns: list of points in rotated image
+        """
+        pts = []
+        for pt_list in pts_list:
+            if isinstance(pt_list, list):
+                pts.extend(pt_list)     # add list
+            else:
+                pts.append(pt_list)     # add pt
+        if rotation is None:
+            rotation = self.get_imageRotate()
+        rot_pts = []
+        for pt in pts:
+            pt_x, pt_y = self.rotate_xy(x=pt[0], y=pt[1],
+                                        deg=rotation)
+            rot_pts.append((pt_x,pt_y))
+        return rot_pts
+                
     def ellipse(self, elp_cent, **kwargs):
+        ###elp_cent = self.points_to_image(elp_cent)[0]
         self.draw.ellipse(elp_cent, **kwargs)
 
     def line(self, points, **kwargs):
         """
-        Draw line segments one more points (pixelx, pixely)
+        Draw line segments one more points (pixelx, pixely) on to rotated image
         if only one point is given, the current pen location is used as the first point
         Current pen position is unchanged.
         Non used args are passed to Image.draw.line 
@@ -1518,14 +1584,69 @@ class GeoDraw:
             pts = [self.curXY, points[0]]
         else:
             pts = points
+        pts = self.points_to_image(pts)
         self.draw.line(pts, **kwargs)
 
+        
+    def drawLine(self, *points, color=None, width=None, **kwargs):
+        """ drawText (ImageOverDraw image part
+        """
+        if color is not None:
+            kwargs['fill'] = color
+        if width is not None:
+            kwargs['width'] = int(width)
+        if 'arrow' in kwargs:
+            arrow = kwargs['arrow']
+            del kwargs['arrow']
+            if 'arrowshape' in kwargs:
+                arrowshape = kwargs['arrowshape']
+                del kwargs['arrowshape']
+            else:
+                arrowshape = (8,10,3)
+            d1, d2, d3 = arrowshape
+            arrow_pt_h = sqrt(d2**2-d3**2)
+            
+            
+        pts = []
+        for point in points:
+            pt = (int(point[0]), int(point[1]))
+            pts.append(pt)
+        self.draw.line(pts, **kwargs)
+
+
+        
+    def drawPolygon(self, *points, color=None, width=None, **kwargs):
+        """ drawText (ImageOverDraw image part
+        """
+        if color is not None:
+            kwargs['fill'] = color
+        if width is not None:
+            kwargs['width'] = int(width)
+        pts = []
+        for point in points:
+            pt = (int(point[0]), int(point[1]))
+            pts.append(pt)
+        self.draw.polygon(pts, **kwargs)
+
+        
+    def drawText(self, xY, text, color=None, font=None, **kwargs):
+        """ drawText (ImageOverDraw image part)
+        :text: text string
+        :xY: x,y pixel location
+        :**kwargs: unused args passed on
+        """
+        if color is not None:
+            kwargs['fill'] = color
+        if font is not None:
+            SlTrace.lg(f"GeoDraw:drawText need font({font}) work in {kwargs}")
+        self.draw.text(xY, text, **kwargs)
 
     def text(self, text, xY=None,pos=None,latLong=None, **kwargs):
         """
         Draw text, at position, defaulting to current pen position
         """
         xY = self.getXY(xY=xY, pos=pos, latLong=latLong)
+        xY = self.points_to_image(xY)[0]
         self.draw.text(xY, text, **kwargs)
         
  
@@ -1547,7 +1668,8 @@ class GeoDraw:
             new_xY = self.getXY(xY=xY2, pos=pos2, latLong=latLong2)
         else:
             new_xY = self.addToPoint(leng=leng, xY=xY, theta=theta, deg=deg)
-        self.line([xY, new_xY], **kwargs)
+        pts = self.points_to_image(xY, new_xY)
+        self.line(pts, **kwargs)
 
 
 
@@ -1558,8 +1680,8 @@ class GeoDraw:
         """
         if image is None:
             image = self.image
-        id = image.copy()
-        draw = ImageDraw.Draw(id)      # Setup ImageDraw access
+        im = image.copy()
+        draw = ImageDraw.Draw(im)      # Setup ImageDraw access
         
         font_size = 58
         line_sp = font_size
@@ -1571,7 +1693,7 @@ class GeoDraw:
             print("show: " + text)
             draw.text(xY, text, font=font, color=tcolor, **kwargs)
             xY = (xY[0], xY[1] + line_sp)
-        id.show()
+        im.show()
         
         
         
@@ -1678,19 +1800,29 @@ if __name__ == "__main__":
         nfail = 0
         ntest = 0
         mapRotate = 0.
-        w = 300.
-        h = 400.
+        w = 886.
+        h = 773.
         im = Image.new("RGB", (int(w), int(h)))    
         gd = GeoDraw(im, mapRotate=mapRotate,
                 ulLat=None, ulLong=None,    # Bounding box
                 lrLat=None, lrLong=None,
                       ulX=0, ulY=0, lrX=w, lrY=h)
         f_fmt = "10.6f"
-        for i in range(0, 6+1):
-            x1 = i*50.
-            for j in range(0, 4+1):
-                y1 = j*100.
-                for k in range(0, 8+1):
+        ndiv = 100
+        x_min = 100
+        x_max = 200
+        x_inc = (x_max-x_min)/ndiv
+        y_min = 500
+        y_max = 600
+        y_inc = (y_max-y_min)/ndiv
+        ndeg = 3
+        for x in range(x_min, x_max):
+            x1 = x
+            x += x_inc
+            for y in range(y_min, y_max):
+                y1 = y
+                y += y_inc
+                for k in range(0, ndeg+1):
                     deg = k*45.
                     x2, y2 = gd.rotate_xy(x=x1, y=y1,
                                            width=gd.getWidth(),
@@ -1811,11 +1943,12 @@ if __name__ == "__main__":
         lines_test()
     
     do_rotate_xy_test = True
-    do_rotate_xy_test = False
+    ###do_rotate_xy_test = False
     if do_rotate_xy_test:
         rotate_xy_test()
 
-    do_rotate_lat_long_test = True
+    do_rotate_lat_long_test = False
+    ###do_rotate_lat_long_test = True
     if do_rotate_lat_long_test:
         rotate_lat_long_test()
     

@@ -258,6 +258,7 @@ class MappingControl(SelectControlWindow):
                         enter_command=self.rotate_enter)
         entry = self.set_entry(field="rotate_cur", label="Current",
                                 value=map_rotate, width=5)
+        self.set_ctl("map.rotate_cur", map_rotate)          # Force showing current value
         if map_rotate != 0:
             entry.config(bg="green")
         map_rotation_frame2 = Frame(location_frame)

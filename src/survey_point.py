@@ -5,7 +5,6 @@ Handling point display aspect for points in SurveyPointManager
 from select_trace import SlTrace
 
 from select_trace import SelectError
-from canvas_coords import CanvasCoords
 
 class SurveyPoint:
     """ Point objects used for doing surveying type operations
@@ -96,7 +95,7 @@ class SurveyPoint:
             point_id = mgr.point_id
         self.point_id = point_id
         
-        self.point_tag = None       # point canvas tag
+        self.point_tag = None       # point iodraw tag
         self.center_tag = None      # point center tag
         self.label_tag = None       # point label tag
         self.trackers = []          # list of trackers if any
@@ -113,18 +112,18 @@ class SurveyPoint:
     def delete(self):
         """ Delete point (stop display)
         """
-        canvas = self.get_canvas()
-        if canvas is None:
+        iodraw = self.get_iodraw()
+        if iodraw is None:
             return
         
         if self.point_tag is not None:
-            canvas.delete(self.point_tag)
+            iodraw.delete_tag(self.point_tag)
             self.point_tag = None
         if self.center_tag is not None:
-            canvas.delete(self.center_tag)
+            iodraw.delete_tag(self.center_tag)
             self.point_tag = None
         if self.label_tag is not None:
-            canvas.delete(self.label_tag)
+            iodraw.delete_tag(self.label_tag)
             self.label_tag = None
 
     def destroy(self):
@@ -132,7 +131,7 @@ class SurveyPoint:
                     
     def display(self, displayed=None, color=None):
         """ Display point + label
-        Adjusting / deleting / replacing canvas tags as appropriate
+        Adjusting / deleting / replacing iodraw tags as appropriate
         :displayed: changing displayed, if present
         :color: changing color if present
         """
@@ -153,15 +152,15 @@ class SurveyPoint:
     def display_point(self):
         """ Display point part
         """
-        canvas = self.get_canvas()
-        if canvas is None:
+        iodraw = self.get_iodraw()
+        if iodraw is None:
             return
         
         if self.point_tag is not None:
-            canvas.delete(self.point_tag)
+            iodraw.delete_tag(self.point_tag)
             self.point_tag = None
         if self.center_tag is not None:
-            canvas.delete(self.center_tag)
+            iodraw.delete_tag(self.center_tag)
             self.center_tag = None
         if not self.displayed:          # Do after in case state changed
             return
@@ -175,10 +174,10 @@ class SurveyPoint:
             y0 = y - hh
             x1 = x0 + w 
             y1 = y0 + h 
-            self.point_tag = canvas.create_oval(x0, y0, x1, y1, fill=self.color,
+            self.point_tag = iodraw.drawCircle((x,y), radius=w/2, color=self.color,
                                     outline=self.color,
                                     activeoutline="red", activefill="red", activewidth=4)
-            self.center_tag = canvas.create_oval(x-1, y-1, x+1, y+1, fill=self.center_color)
+            self.center_tag = iodraw.drawCircle((x,y), radius=1, color=self.center_color)
         elif self.point_type == SurveyPoint.POINT_TYPE_NONE:
             pass    
 
@@ -191,7 +190,7 @@ class SurveyPoint:
         return self.mgr.get_canvas_coords(**kwargs)
     
     def ll_to_canvas(self, lat=None, long=None, trace=False):
-        """ Convert Lat/Long to canvas x,y
+        """ Convert Lat/Long to iodraw x,y
         :lat: latitude
         :long: Longitude
         :trace: trace operation - Debugging
@@ -207,19 +206,19 @@ class SurveyPoint:
     def display_label(self):
         """ Display label part
         """
-        canvas = self.get_canvas()
-        if canvas is None:
+        iodraw = self.get_iodraw()
+        if iodraw is None:
             return
         
         if self.label_tag is not None:
-            canvas.delete(self.label_tag)
+            iodraw.delete_tag(self.label_tag)
             self.label_tag = None
         if not self.displayed or not self.label_displayed:        # Do here, in case state changed
             return
         
         text = self.label
         char_size = self.label_size
-        text_fill = "white"
+        text_color = "white"
         x_pixel, y_pixel = self.ll_to_canvas()
         text_push_v = char_size*2
         text_push = char_size*(len(text)/2.+1)   
@@ -227,9 +226,9 @@ class SurveyPoint:
         text_y_off = text_x_off
         if x_pixel < text_push:
             text_x_off = text_push
-        elif x_pixel > canvas.winfo_width() - text_push:
+        elif x_pixel > iodraw.getWidth() - text_push:
             text_x_off = - text_push
-        if y_pixel > canvas.winfo_height() - text_push_v:
+        if y_pixel > iodraw.getHeight() - text_push_v:
             text_y_off = -1*text_push_v
         text_pos = (x_pixel+text_x_off, y_pixel+text_y_off)
         over_laps = self.over_lapping()
@@ -243,12 +242,12 @@ class SurveyPoint:
             text_pos = (text_pos[0]+our_idx*char_size, text_pos[1]+our_idx*char_size)
             prefix = "+"*our_idx
             text = f"{prefix}{text}"    
-        self.label_tag = canvas.create_text(text_pos, text=text, fill=text_fill)
+        self.label_tag = iodraw.drawText(text_pos, text=text, color=text_color)
 
-    def get_canvas(self):
-        """ Get canvas directly
+    def get_iodraw(self):
+        """ Get overlay/image object
         """
-        return self.get_sc().get_canvas()
+        return self.mgr.get_iodraw()
 
     def get_gmi(self):
         return self.get_sc().gmi
@@ -260,18 +259,18 @@ class SurveyPoint:
     
     def move(self, canvas_x=None, canvas_y=None, lat=None, long=None):
         """ Move point
-        :x,y: to new canvas point
+        :x,y: to new iodraw point
         :lat,long: to new latitude, longitude
-        FUTURE: use canvas move
+        FUTURE: use iodraw move
         """
         nc = 0
         if canvas_x is not None or canvas_y is not None: nc += 1
         if lat is not None or long is not None: nc += 1
         if nc == 0:
-            raise SelectError("At least one of canvas, or lat/long")
+            raise SelectError("At least one of iodraw, or lat/long")
         
         if nc > 1:
-            raise SelectError("No more than one of canvas, lat/long")
+            raise SelectError("No more than one of iodraw, lat/long")
         
         pc = self.get_canvas_coords(canvas_x=canvas_x, canvas_y=canvas_y,
                           lat=lat, long=long)
@@ -338,7 +337,7 @@ class SurveyPoint:
         SlTrace.lg(f"    Latitude: {pc_lat:{ll_fmt}} Longitude: {pc_long:{ll_fmt}}")
         SlTrace.lg(f"    x({unit}): {pc.x_dist:{dis_fmt}}  y({unit}): {pc.y_dist:{dis_fmt}}")
         SlTrace.lg(f"    x(image pix): {pc.x_image:{px_fmt}}  y(image pix): {pc.y_image:{px_fmt}}")
-        SlTrace.lg(f"    x(canvas pix): {pc_x:{px_fmt}}  y(canvas pix): {pc_y:{px_fmt}}")
+        SlTrace.lg(f"    x(iodraw pix): {pc_x:{px_fmt}}  y(canvas pix): {pc_y:{px_fmt}}")
         rotate = gmi.get_mapRotate()
         SlTrace.lg(f"    rot({rotate})")
         SlTrace.lg(f"    ulLat: {gmi.ulLat:{ll_fmt}} ulLong: {gmi.ulLong:{ll_fmt}}")

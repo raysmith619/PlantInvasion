@@ -24,7 +24,7 @@ from tkinter import filedialog,Tk, mainloop
 ###from tkinter.filedialog import askopenfilename
 import argparse
 
-from survey_point_manager import SurveyPointManager
+from manage_survey_point import SurveyPointManager
 from geo_address import GeoAddress
 from sample_file import SampleFile
 
@@ -260,13 +260,21 @@ def add_trail_file():
             
     pt_mgr.add_trail_file(trailfile)
 
-def add_compass_rose():
+def add_scale():
     """ Add Compass Rose to map
     """
     if pt_mgr is None:
         return
     
-    pt_mgr.overlayCompassRose()
+    pt_mgr.add_scale()
+
+def add_scale_markers():
+    """ Add Compass Rose to map
+    """
+    if pt_mgr is None:
+        return
+    
+    pt_mgr.add_scale_markers()
     
 def map_region():
     if pt_mgr is not None:
@@ -366,13 +374,15 @@ def do_address(address):
 menubar, filemenu = app.add_menu()
 filemenu.add_command(label="Favorites", command=favorites)
 filemenu.add_command(label="Save Map", command=save_map_file)
-menubar.add_cascade(label="Maps", menu=filemenu)
+menubar.add_cascade(label="Places/Maps", menu=filemenu)
 
 menubar, filemenu = app.add_menu()
 filemenu.add_command(label="Add Trail File", command=add_trail_file)
 filemenu.add_command(label="Add Sample File", command=add_sample_file)
 filemenu.add_separator()
-filemenu.add_command(label="Add Compass Rose", command=add_compass_rose)
+filemenu.add_command(label="Add Scale", command=add_scale)
+filemenu.add_separator()
+filemenu.add_command(label="ADD MARKERS", command=add_scale_markers)
 menubar.add_cascade(label="Add to Map", menu=filemenu)
 
 menubar, filemenu = app.add_menu()

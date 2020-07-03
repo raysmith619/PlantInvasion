@@ -1,14 +1,12 @@
 import PIL.Image
+from tkinter import Frame, Canvas, Toplevel, YES, BOTH, SUNKEN
 import PIL.ImageTk
-import tkinter as tk
-from tkinter import *
 import os
+from math import cos, sin, pi
 
 from select_trace import SlTrace
 from select_error import SelectError
 from GoogleMapImage import GoogleMapImage
-from mapping_control import MappingControl
-import survey_point_manager
 
 class ScrolledCanvas(Frame):
     def __init__(self, fileName=None, gmi=None, image=None, title=None, parent=None,
@@ -108,18 +106,30 @@ class ScrolledCanvas(Frame):
             SlTrace.lg("ScrolledCanvas: Blank Start")
         self.set_pt_mgr(pt_mgr)
         self.map_ctl = map_ctl
-
+        self.curDeg = 0            # For addToPoint
+        
     def get_pt_mgr(self):
         """ Return pt manager, created or passed in
         :returns: point manager (SurveyPointManager)
         """
         return self.pt_mgr
+
+    def get_iodraw(self):    
+        """ Get drawing object
+        """
+        return self.get_pt_mgr().get_iodraw()
     
     def get_map_ctl(self):
         """ Get mapping control (MappingControl), created or passed in
         :returns: return mapping control (MappingControl)
         """
         return self.map_ctl 
+
+    def get_image(self):
+        """ Get image from geoDraw
+        """
+        gmi = self.get_gmi()
+        return gmi.get_image()
 
     def get_height(self):
         """ Get canvas height
@@ -136,12 +146,45 @@ class ScrolledCanvas(Frame):
 
     def getYFract(self, canvas_y):
         return canvas_y/self.get_height()
+
+
+    def getXY(self, latLong=None, pos=None, xY=None, xYFract=None, unit=None):
+        """
+        Get/Convert canvas(overlay) pixel, map fraction, longitude, physical location/specification
+        to pixel location
+        """
+        nloc_spec = 0
+        if latLong is not None:
+            nloc_spec += 1
+        if pos is not None:
+            nloc_spec += 1
+            latLong = self.posToLatLong(pos)
+        if xY is not None:
+            nloc_spec += 1
+        if xYFract is not None:
+            nloc_spec += 1
         
-    def set_image(self):
+        if nloc_spec > 1:
+            raise SelectError("May specify, at most, one of latLong, pos, or xY or xYFract")
+        
+        if latLong is not None:
+            xY =  self.ll_to_canvas(latLong[0], latLong[1])
+        elif pos is not None:
+            xY = self.pos_to_canvas(pos, unit=unit)
+        elif xYFract is not None:
+            xY = (xYFract[0]*self.get_canvas_width(), xYFract[1]*self.get_canvas_height())
+        if xY is None:
+            xY = self.curXY
+        return xY
+
+        
+    def set_image(self, image=None):
         """ Set image, in preparation to save completed graphics file
         In genera, copy objects like trails which are canvas based objects to
         the image
         """
+        if image is None:
+            image = self.get_image()
         mgr = self.get_pt_mgr()
         if mgr is None:
             return
@@ -150,7 +193,7 @@ class ScrolledCanvas(Frame):
             ###trail.hide()
             self.gmi.addTrail(mgr.trail, width=trail.width*1.85)
             ###self.canv.tag_raise(self.imgtag)
-            ###self.lower_image()
+            self.lower_image()
             ###self.size_image_to_canvas()
 
     def set_pt_mgr(self, pt_mgr):
@@ -168,8 +211,8 @@ class ScrolledCanvas(Frame):
                     
     def on_resize(self, event):
         # determine the ratio of old width/height to new width/height
-        if self.imOriginal is None:
-            return                      # Nothing yet
+        ###if self.imOriginal is None:
+        ###    return                      # Nothing yet
         self.update()                   # Insure sizing completed
         new_width = event.width
         new_height = event.height
@@ -190,9 +233,11 @@ class ScrolledCanvas(Frame):
         
         self.canvas_width = self.canv.winfo_width()
         self.canvas_height = self.canv.winfo_height()
-        self.image = self.imOriginal.resize((self.canvas_width, self.canvas_height))
+        image = self.get_image()
+        image = image.resize((self.canvas_width, self.canvas_height))
+        ###self.set_image(image)
         self.canv.config(scrollregion=(0,0,self.canvas_width,self.canvas_height))
-        self.im2=PIL.ImageTk.PhotoImage(self.image)
+        self.im2=PIL.ImageTk.PhotoImage(image)
         self.imgtag=self.canv.create_image(0,0,anchor="nw",image=self.im2)
         self.lower_image()
         self.update()                   # Insure sizing completed
@@ -220,10 +265,10 @@ class ScrolledCanvas(Frame):
             self.canvas_width = self.width
         if not hasattr(self, "canvas_height"):
             self.canvas_height = self.height
-        self.image = self.imOriginal.resize((self.canvas_width, self.canvas_height))
+        image =  self.get_image().resize((self.canvas_width, self.canvas_height))
         self.canv.config(scrollregion=(0,0,self.canvas_width, self.canvas_height))
-        self.im2=PIL.ImageTk.PhotoImage(self.image)
-        self.imgtag=self.canv.create_image(0,0,anchor="nw",image=self.im2)
+        ###self.im2=PIL.ImageTk.PhotoImage(image)
+        self.imgtag=self.canv.create_image(0,0,anchor="nw",image=image)
 
     def ll_to_canvas(self, lat=None, long=None, trace=False):
         """ Convert Lat/Long to canvas x,y
@@ -343,6 +388,49 @@ class ScrolledCanvas(Frame):
                     width=mark_width+1)
                 self.mki_tags.append(tag)
         self.update()
+    
+    def meterToMx(self, meter):
+        """
+        Convert horizontal position, in meters, to location in xpixels
+        """
+        
+        gmi = self.get_gmi()
+        image_pixel =  gmi.meterToPixel(meter)
+        canvas_pixel = self.image_to_canvas(image_pixel,0)[0]   # use x,0, assume uniform over map
+        return canvas_pixel
+    
+    def meterToMy(self, meter):
+        gmi = self.get_gmi()
+        image_pixel =  gmi.meterToPixel(meter)
+        canvas_pixel = self.image_to_canvas(0, image_pixel,0)[1]   # use 0,y and assume uniform over map
+        return canvas_pixel
+
+    
+    def mxToMeter(self, mx):
+        """
+        Convert horizontal location in pixels to horizontal location in meters
+        """
+        return mx/self.getWidth()*(self.lrX-self.ulX) + self.ulX
+    
+    def meterToPixel(self, meter):
+        """
+        meter to canvas pixel
+        :meter: distance in meters
+        """
+        gmi = self.get_gmi()
+        image_pixel =  gmi.meterToPixel(meter)
+        canvas_pixel = self.image_to_canvas(image_pixel,0)[0]   # use x,0, assume uniform over map
+        return canvas_pixel
+    
+    def pixelToMeter(self, pixel):
+        """
+        canvas pixel to meter
+        :pixel: distance in pixels
+        """
+        gmi = self.get_gmi()
+        image_pixel = self.canvas_to_image(pixel,0)[0]   # use x,0, assume uniform over map
+        meter =  gmi.pixelToMeter(image_pixel)
+        return meter
 
     
     def scale(self, wscale, hscale):
@@ -377,6 +465,78 @@ class ScrolledCanvas(Frame):
         x,y = cnv.canvasx(event.x), cnv.canvasy(event.y)
         if self.mouse_double_down_call is not None:
             self.mouse_double_down_call(x,y)
+            
+    def drawCircle(self, xY, radius=None, color=None, **kwargs):
+        """ Draw circle on canvas(overlay)
+        :xY: x,y coordinates
+        :radius: radius in pixels
+        :color: fill color
+        :**kwargs: passed to elipse
+        :returns: list of canvas tags
+        """
+        canvas = self.get_canvas()
+        if radius is None:
+            radius = 2
+        if color is not None:
+            kwargs['fill'] = color
+        x, y = xY
+        x0 = x - radius
+        y0 = y - radius
+        x1 = x + radius 
+        y1 = y + radius 
+
+        tag = canvas.create_oval(x0, y0, x1, y1,
+                                    **kwargs)
+        return tag
+
+        
+    def drawLine(self, *points, color=None, width=None, **kwargs):
+        """ drawLine for canvas (overlay)
+        :points:  0 or more x,y pairs
+        :width: line width
+        :**kwargs: remaining args passed to lowerlevel function
+        """
+        tags = []
+        p1 = None
+        canvas = self.get_canvas()
+        for p2 in points:
+            if p1 is not None:
+                tag = canvas.create_line(p1[0],p1[1],p2[0],p2[1],
+                                         fill=color, width=width, **kwargs)
+                tags.append(tag)
+            p1 = p2
+        return tags
+
+        
+    def drawPolygon(self, *points, color=None, **kwargs):
+        """ drawPolygon (ImageOverDraw overlay part)
+        """
+        if color is not None:
+            kwargs['fill'] = color
+        pts = []
+        for point in points:
+            pt = (int(point[0]), int(point[1]))
+            pts.append(pt)
+        canvas = self.get_canvas()
+        tag = canvas.create_polygon(*pts, **kwargs)
+        return tag
+
+
+    def drawText(self, xY, text,  color=None, font=None,**kwargs):
+        """ drawText (ImageOverDraw canvas/overlay part)
+        :text: text string
+        :xY: x,y pixel location
+        :**kwargs: unused args passed on
+        """
+        canvas = self.get_canvas()
+        text_x, text_y = xY
+        
+        tag = canvas.create_text(text_x, text_y,
+                                text=text, font=font,
+                                fill=color,
+                                **kwargs)
+        return tag
+
     
     def canvas2image_OLD(self, x_pixel, y_pixel):
         """ Convert canvas coordinates to image coordinates
@@ -420,10 +580,72 @@ class ScrolledCanvas(Frame):
         canvas_y = y_image*canvas_height/image_height
         return (canvas_x, canvas_y)
 
+    
+    def addToPoint(self, leng=None, lengPix=None, xY=None, pos=None, latLong=None, theta=None, deg=None, unit=None):
+        """
+        Add to canvas (overlay) point (in unrotated image), returning adjusted point in pixels
+        Add requested rotation (curDeg if None) to map rotation, if
+        mapRotation is not None
+        :leng: length in unit
+        :lengPix: length in pixels
+        :unit: unit default: self.unit, meter
+        """
+        gmi = self.get_gmi()
+        if leng is None and lengPix is None:
+            raise SelectError("leng/LengPix is required")
+        if leng is not None and lengPix is not None:
+            raise SelectError("Only one of leng/LengPix is allowed")
+        if lengPix is not None:
+            leng = self.pixelToMeter(lengPix)
+        if not isinstance(leng, float) and not isinstance(leng, int):
+            raise SelectError(f"leng({leng} {type(leng)}) must be a float or int")
+        
+        
+        if unit is None:
+            unit = self.unit
+        leng /= gmi.unitLen(unit)
+            
+        if theta is not None and deg is not None:
+            raise SelectError("Only specify theta or deg")
+        if theta is not None:
+            deg = theta / pi * 180
+        if deg is None:
+            deg = self.curDeg
+            
+        npxl = 0
+        if pos is not None:
+            npxl += 1
+        if xY is not None:
+            npxl += 1
+        if latLong is not None:
+            npxl += 1
+        if npxl > 1:
+            raise SelectError("Only specify one of xY, pos or latLong")
+        if npxl != 1:
+            raise SelectError("Must specify one of xY, pos or latLong")
+        if leng is None:
+            raise SelectError("leng is required")
+        
+        xY = self.getXY(xY=xY, pos=pos, latLong=latLong)
+            
+        if deg is None:
+            deg = 0
+        deg += self.get_gmi().get_mapRotate()
+            
+        theta = deg/180.*pi
+        if theta != 0:
+            delta_x = cos(theta)*leng
+            delta_y = -sin(theta)*leng
+        else:
+            delta_x = leng
+            delta_y = 0.
+        return xY[0]+self.meterToMx(delta_x), xY[1]+self.meterToMy(delta_y)
+
+
     def canvas_to_image(self, *xY_or_x_y):
         """
-        Convert  canvas pixel x,y to image pixel x,y
-        1. Rotate from up facing to mapRotate
+        Convert  (unrotated)canvas pixel x,y to (unrotated)image pixel x,y
+        1. (No need to)Rotate from up facing to mapRotate
         2. Scale from canvas x,y pixel to image x,y pixel
         ??? 3. Rotate back to mapRotate
         Returning canvas x,y pair
@@ -437,21 +659,22 @@ class ScrolledCanvas(Frame):
         else:
             canvas_x, canvas_y = xY_or_x_y[0], xY_or_x_y[1]
 
-        gmi = self.get_gmi()
-        mapRotate = gmi.get_mapRotate()
         if len(xY_or_x_y) == 0:
             raise SelectError("imageToCanvas: xY required")
+        gmi = self.get_gmi()
         
         canvas_width = self.get_canvas_width()
         canvas_height = self.get_canvas_height()
+        '''
+        mapRotate = gmi.get_mapRotate()
         canvas_x, canvas_y = gmi.rotate_xy(
                             x=canvas_x, y=canvas_y,
                             width=canvas_width,
                             height=canvas_height,
                             deg=mapRotate)
-
-        image_width = self.gmi.getWidth()
-        image_height = self.gmi.getHeight()
+        '''
+        image_width = gmi.getWidth()
+        image_height = gmi.getHeight()
         x_image = canvas_x*image_width/canvas_width
         y_image = canvas_y*image_height/canvas_height
 
@@ -459,8 +682,8 @@ class ScrolledCanvas(Frame):
 
     def image_to_canvas(self, *xY_or_x_y):
         """
-        Convert  image pixel x,y to canvas pixel x,y
-        1. Rotate from mapRotate to up facing
+        Convert  (unrotated)image pixel x,y to (unrotated)canvas pixel x,y
+        1. (No need to )Rotate from mapRotate to up facing
         2. Scale from image x,y pixel to canvas x,y
         :xY_or_x_y: image coordinates
                 1 arg-> xY tuple
@@ -478,28 +701,30 @@ class ScrolledCanvas(Frame):
         
         if len(xY_or_x_y) == 0:
             raise SelectError("imageToCanvas: xY required")
+        x_image, y_image = xY
+        '''
         mapRotate = gmi.get_mapRotate()
         x_image, y_image = gmi.rotate_xy(x=xY[0], y=xY[1],
                             width=gmi.getWidth(),
                             height=gmi.getHeight(),
                             deg=-mapRotate)
-
+        '''
         image_width = self.gmi.getWidth()
         image_height = self.gmi.getHeight()
         canvas_width = self.get_canvas_width()
         canvas_height = self.get_canvas_height()
         canvas_x = x_image*canvas_width/image_width
         canvas_y = y_image*canvas_height/image_height
-        ###''' No rotation back ???
+        ''' No rotation
         canvas_x, canvas_y = gmi.rotate_xy(     # Returns: x right
                                                 #          y downwards
                                 x=canvas_x, y=canvas_y,
                                 width=canvas_width, height=canvas_height,
-                                deg=mapRotate)
+                                deg=gmi.get_mapRotate())
 
         image_width = self.gmi.getWidth()
         image_height = self.gmi.getHeight()
-        ###'''
+        '''
         return canvas_x, canvas_y
 
 
@@ -595,7 +820,10 @@ class ScrolledCanvas(Frame):
 
     def get_gmi(self):
         return self.gmi
-    
+
+    def get_geoDraw(self):
+        return self.get_gmi().get_geoDraw()
+        
     def close(self):
         """
         Close file window
@@ -634,8 +862,9 @@ class ScrolledCanvas(Frame):
         self.canvas_frame.pack(expand=YES, fill=BOTH)
         self.canv = Canvas(self.canvas_frame, relief=SUNKEN)
         self.canv.pack(expand=YES, fill=BOTH)
-        
-        w,h = self.image.size
+        if image is None:
+            image = self.get_image()
+        w,h = image.size
         if width is None:
             width = w
         if height is None:
@@ -643,9 +872,10 @@ class ScrolledCanvas(Frame):
         self.canv_width = self.width = width
         self.canv_height = self.height = height
         SlTrace.lg("sizeWindow width=%d height=%d" % (width, height), "resize")
-        self.im2=PIL.ImageTk.PhotoImage(image)
-        self.imgtag=self.canv.create_image(0,0,anchor="nw",image=self.im2)
-        self.image = image.resize((width,height))
+        im = PIL.ImageTk.PhotoImage(image)
+        self.imgtag=self.canv.create_image(0,0,anchor="nw",image=im)
+        image = image.resize((width,height))
+        ###self.set_image(image)
         
         '''
         self.sbarV = sbarV = Scrollbar(self, orient=VERTICAL)
@@ -733,7 +963,7 @@ class ScrolledCanvas(Frame):
             kwargs['enlargeForRotate'] = self.enlargeForRotate        
         gmi = GoogleMapImage(**kwargs)
         if gmi is None:
-            raise SelectError(f"Can't load GoogleMapImage(latLong{latLong}")
+            raise SelectError(f"Can't load GoogleMapImage(latLong{kwargs}")
         
         self.update_gmi(gmi)
 
@@ -763,25 +993,36 @@ class ScrolledCanvas(Frame):
         if self.gmi is not None and False:      # TFD avoid destroying 
             self.gmi.destroy()
         self.gmi = gmi
-        self.update_image(gmi.image)
+        self.update_image(gmi.get_image())
 
+    def delete_tag(self, tag):
+        """ Delete canvas tag
+        :tag: to ge deleted
+        """
+        canvas = self.get_canvas()
+        if canvas is None:
+            return
+        
+        canvas.delete(tag)
+        
+        
     def destroy(self):
         """ Release any resources
         present for uniformity
         """
         self.canv = None
     
-    def update_image(self, image):
+    def update_image(self, image=None):
         """ Update image, and canvas
         :image: map image
         """
 
-        if self.image is not None:
-            ###self.image.destroy()        # AttributeError: 'Image' object has no attribute 'destroy'
-            self.image = None
-        self.image = image
-        self.imOriginal = image               # To avoid sizing loss
-        self.set_canvas(self.image, width=self.width, height=self.height)
+        if self.image is None:
+            image = self.get_image()
+        if image is None:
+            return
+        
+        self.set_canvas(image, width=self.width, height=self.height)
 
 
 if __name__ == "__main__":
