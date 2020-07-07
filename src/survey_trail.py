@@ -30,6 +30,7 @@ class SurveyTrail:
         self.mgr = mgr
         self.segments = []
         self.file_name = file_name
+        self.title = file_name      # default title
         self.is_show_points = show_points
         if basis is None:
             basis = GPXFile()

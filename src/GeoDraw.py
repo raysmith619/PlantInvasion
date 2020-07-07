@@ -11,6 +11,7 @@ from builtins import staticmethod
 ###from openpyxl.drawing.effect import Color
 ###from idlelib.colorizer import color_config
 ###from pandas._libs.tslibs.offsets import get_firstbday
+from GeoDrawMapState import GeoDrawMapState
 
 from select_trace import SlTrace
 from survey_trail import SurveyTrail
@@ -227,14 +228,6 @@ class GeoDraw:
             image = Image.new("RGB", (100, 100))
         self.imageOriginal = image
         self.setImage(image)
-        ulmx = 0.
-        ulmy = 0.
-        lrmx = ulmx  + self.getWidth()
-        lrmy = ulmy + self.getHeight()
-        self.ulmx = ulmx
-        self.ulmy = ulmy
-        self.lrmx = lrmx
-        self.lrmy = lrmy
         self.mapRotate = mapRotate              # Current rotation
         self.mapRotateOriginal = mapRotate      # record original
         self.expandRotate = expandRotate
@@ -251,40 +244,10 @@ class GeoDraw:
                 raise SelectError("Only one of ulLat and lrX can be specified")
             if ulLong is not None and lrY is not None:
                 raise SelectError("Only one of ulLong or lrY can be specified")
-        self.ulLat = ulLat
-        self.ulLong = ulLong
-        self.lrLat = lrLat
-        self.lrLong = lrLong
-            
-        
-        if ulX is None: 
-            """
-            The normal case - set distance square
-            with 0,0 in upper left corner
-            and unit distance in x and  y to
-            lower right corner
-            lat increases (positive North) upwards
-            Longitude (negative for West) increases (less negative) to right
-            x increases to right
-            y increases downward   
-            """
-            ulX = 0.        # Upper left corner is origin
-            ulY = 0.
-            lat_avg = (self.ulLat+self.lrLat)/2.
-            lat_rad = lat_avg*pi/180.
-            lrX = ulX + cos(lat_rad) * (self.lrLong-self.ulLong) / 360. * EQUATOR_CIRCUMFERENCE
-            lrY = ulY + (self.ulLat-self.lrLat) / 360. * EQUATOR_CIRCUMFERENCE
-        self.long_width = self.lrLong-self.ulLong    # increase left to right
-        self.lat_height = self.ulLat-self.lrLat      # increase ulLat: upper(more) to lrLat: lower(less)
 
-        SlTrace.lg(f"Loaded Image: width:{self.getWidth()} height:{self.getHeight()}")
-        SlTrace.lg(f"Distance coordinates(meters):"
-              f"\n\tUpper Left x:{ulX:.1f} y:{ulY:.1f}"
-              f"\n\tLower Right x: {lrX:.1f} y: {lrY:.1f}")
-        self.ulX = ulX
-        self.ulY = ulY
-        self.lrX = lrX
-        self.lrY = lrY
+        self.setLatLong(ulLat=ulLat, ulLong=ulLong,
+                        lrLat=lrLat, lrLong=lrLong,
+                        setXY=(ulX is None)) 
         self.setCurLoc(pos=pos, latLong=latLong, xY=xY)
         self.setCurAngle(deg=deg, theta=theta)
         self.unit = unit
@@ -298,6 +261,77 @@ class GeoDraw:
         self.image = image
         self.draw = ImageDraw.Draw(self.image)      # Setup ImageDraw access
         
+
+    def setLatLong(self, ulLat=None, ulLong=None,
+                    lrLat=None, lrLong=None,
+                    setXY=True):
+        """ Setup latitude, Longitude and distance, if requested
+        :ulLat, ulLong, lrLat, lrLong: set corners lat, long
+                    default: use current values
+        :setXY: set distance, iff True
+            default: True
+        """
+        if ulLat is not None:
+            self.ulLat = ulLat
+         
+        if ulLong is not None:
+            self.ulLong = ulLong
+        
+        if lrLat is not None:
+            self.lrLat = lrLat
+        
+        if lrLong is not None:
+            self.lrLong = lrLong
+        SlTrace.lg(f"\n setLatLong: ulLat:{self.ulLat} ulLong:{self.ulLong}"
+                   f" lrLat:{self.lrLat} lrLong:{self.lrLong} ")
+
+        ulmx = 0.
+        ulmy = 0.
+        lrmx = ulmx  + self.getWidth()
+        lrmy = ulmy + self.getHeight()
+        self.ulmx = ulmx
+        self.ulmy = ulmy
+        self.lrmx = lrmx
+        self.lrmy = lrmy
+        SlTrace.lg(f"setLatLong: getWidth:{self.getWidth()} getHeight:{self.getHeight()}")
+        SlTrace.lg(f"setLatLong: ulmx:{self.ulmx} ulmy:{self.ulmy}"
+                   f" lrmx:{self.lrmx} lrmy:{self.lrmy} ")
+
+            
+        self.long_width = self.lrLong-self.ulLong    # increase left to right
+        self.lat_height = self.ulLat-self.lrLat      # increase ulLat: upper(more) to lrLat: lower(less)
+        
+        if setXY:
+            """
+            The normal case - set distance square
+            with 0,0 in upper left corner
+            and unit distance in x and  y to
+            lower right corner
+            lat increases (positive North) upwards
+            Longitude (negative for West) increases (less negative) to right
+            x increases to right
+            y increases downward   
+            """
+            ulX = 0.        # Upper left corner is origin
+            ulY = 0.
+            '''
+            lat_avg = (self.ulLat+self.lrLat)/2.
+            lat_rad = lat_avg*pi/180.
+            lrX = ulX + cos(lat_rad) * (self.lrLong-self.ulLong) / 360. * EQUATOR_CIRCUMFERENCE
+            lrY = ulY + (self.ulLat-self.lrLat) / 360. * EQUATOR_CIRCUMFERENCE
+            '''
+            lrX = self.geoDist((self.ulLat, self.ulLong), (self.ulLat, self.lrLong), 'm')
+            lrY = self.geoDist((self.ulLat, self.lrLong), (self.lrLat, self.lrLong), 'm')
+            SlTrace.lg(f"Loaded Image: width:{self.getWidth()} height:{self.getHeight()}")
+            SlTrace.lg(f"Distance coordinates(meters):"
+                  f"\n\tUpper Left x:{ulX:.1f} y:{ulY:.1f}"
+                  f"\n\tLower Right x: {lrX:.1f} y: {lrY:.1f}")
+            self.ulX = ulX
+            self.ulY = ulY
+            self.lrX = lrX
+            self.lrY = lrY
+        SlTrace.lg(f"setLatLong: ulX:{self.ulX:.1f} ulY:{self.ulY}"
+                   f" lrX:{self.lrX} lrmy:{self.lrY} meters")
 
     @classmethod
     def boundLatLong(cls, points=None, mapRotate=None,
@@ -1439,6 +1473,71 @@ class GeoDraw:
         return imageRotate
         
 
+    def expandRegion(self, ulLat=None, ulLong=None, lrLat=None, lrLong=None, 
+                     aspect=True):
+        """
+        Expand region to fill map
+        :ulLat,...,lrLong: selection box
+        :aspect: True keep x,y aspect unchanged TBD
+                default: True
+        """
+        ul_x, ul_y = self.latLongToPixel((ulLat, ulLong))
+        lr_x, lr_y = self.latLongToPixel((lrLat, lrLong))
+        min
+        self.prev_image = self.image
+        new_im = self.image.crop(box=(ul_x, ul_y, lr_x, lr_y))
+        SlTrace.lg(f"expandRegion: ul_x={ul_x} ul_y={ul_y} lr_x={lr_x} lr_y={lr_y}")
+        SlTrace.lg(f"new_im: {new_im}")
+        self.setImage(new_im)
+        self.setLatLong(ulLat=ulLat, ulLong=ulLong,
+                        lrLat=lrLat, lrLong=lrLong)
+        return new_im           # Just for immediate use, already stored
+
+    def popMapState(self):
+        """ pop (restore) previous map state
+        """
+        if len(self.mapStates) <= 0:
+            return
+        
+        map_state = self.mapStates.pop()
+        self.setMapState(map_state)
+            
+    def pushMapState(self):
+        """ push current map state, recovered via popMap
+        """
+        map_state = self.collectMapState()
+        self.mapStates.append(map_state)
+
+    def collectMapState(self):
+        """ save map state and return it
+        :returns: map_state able to be reset via call to restoreMap
+        """
+        map_state = GeoDrawMapState(self)
+        return map_state
+        
+    def setMapState(self, state):
+        state.setState()
+        
+    def expandRegion_xy(self, min_x=None, min_y=None, max_x=None, max_y=None,
+                     aspect=True):
+        """
+        Expand region to fill map
+        :min_x,min_y,...: image box
+        :aspect: True keep x,y aspect unchanged TBD
+                default: True
+        """
+
+        self.prev_image = self.image
+        new_im = self.image.crop(box=(min_x, min_y, max_x, max_y))
+        SlTrace.lg(f"expandRegion: min_x={min_x} min_y={min_y} max_x={max_x} max_y={max_y}")
+        SlTrace.lg(f"new_im: {new_im}")
+        self.setImage(new_im)
+        ulLat, ulLong = self.pixelToLatLong((min_x,min_y))
+        lrLat, lrLong = self.pixelToLatLong((max_x,max_y))
+        self.setLatLong(ulLat=ulLat, ulLong=ulLong,
+                        lrLat=lrLat, lrLong=lrLong)
+        return new_im           # Just for immediate use, already stored
+
     def rotateMap(self, deg, incr=True, expand=None):
         """
         Rotate map, updating image, and mapRotate
@@ -1596,17 +1695,9 @@ class GeoDraw:
         if width is not None:
             kwargs['width'] = int(width)
         if 'arrow' in kwargs:
-            arrow = kwargs['arrow']
             del kwargs['arrow']
-            if 'arrowshape' in kwargs:
-                arrowshape = kwargs['arrowshape']
-                del kwargs['arrowshape']
-            else:
-                arrowshape = (8,10,3)
-            d1, d2, d3 = arrowshape
-            arrow_pt_h = sqrt(d2**2-d3**2)
-            
-            
+        if 'arrowshape' in kwargs:
+            del kwargs['arrowshape']
         pts = []
         for point in points:
             pt = (int(point[0]), int(point[1]))
@@ -1639,7 +1730,7 @@ class GeoDraw:
             kwargs['fill'] = color
         if font is not None:
             SlTrace.lg(f"GeoDraw:drawText need font({font}) work in {kwargs}")
-        self.draw.text(xY, text, **kwargs)
+        self.draw.text(xY, text, font=font, **kwargs)
 
     def text(self, text, xY=None,pos=None,latLong=None, **kwargs):
         """

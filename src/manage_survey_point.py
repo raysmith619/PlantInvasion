@@ -20,7 +20,6 @@ from survey_point import SurveyPoint
 from tracking_control import TrackingControl
 from canvas_coords import CanvasCoords
 from GoogleMapImage import GoogleMapImage
-from GeoDraw import GeoDraw
 from image_over_draw import ImageOverDraw
 import scrolled_canvas
 from compass_rose import CompassRose
@@ -230,6 +229,50 @@ class SurveyPointManager:
         self.sc.size_image_to_canvas()
         self.sc.mark_canvas()
         self.redisplay()
+
+    def previous_map(self):
+        """ Put up previous map state
+        """
+        gD = self.get_geoDraw()
+        gD.popMap()
+                    
+    def expand_region(self):
+        """ expand most recently created region, if one, to
+        fill display area, keeping aspect ration the same
+        """
+        gD = self.get_geoDraw()
+        region = self.get_region()
+        if region is None:
+            SlTrace.report("No region selected")
+            return False
+        region_points = region.get_points()
+        SlTrace.lg("\n Region Points")
+        for point in region_points:
+            point.snapshot()
+        if not region.is_complete():
+            SlTrace.report(f"Region is not complete")
+            return False
+        
+        (ulLat, ulLong), (lrLat, lrLong) = region.ullr_ll()
+        if SlTrace.trace("expand_points"):
+            erp_color = "white"
+            self.add_point(SurveyPoint(self, label="ER_ul", lat=ulLat,
+                                       long=ulLong,
+                                       color=erp_color))
+            self.add_point(SurveyPoint(self, label="ER_lr", lat=lrLat,
+                                       long=lrLong,
+                                       color=erp_color))
+        cc_dist = gD.geoDist((ulLat, ulLong), (lrLat, lrLong),  unit="m")
+        SlTrace.lg(f"ul to lr dist: {cc_dist:.1f} meters")
+        self.remove_points(region.get_points()) # Of no use and clutter drawing
+        self.tr_ctl.restart_region()
+        new_image = gD.expandRegion(ulLat, ulLong, lrLat, lrLong)
+        self.sc.update_image(new_image)
+        self.sc.size_image_to_canvas()
+        self.sc.mark_canvas()
+        ###gD.setLatLong()
+        self.redisplay()
+        return True
             
     def select_region(self):
         """ select most recently created region, if one
@@ -550,10 +593,12 @@ class SurveyPointManager:
         the image
         """
         self.iodraw.set_to_image(True)
+        
         self.redisplay()
+        self.get_sc().raise_image()
         
         self.iodraw.set_to_image(False)
-
+        
     def get_canvas(self):
         """ Get Canvas type object
         """
@@ -648,8 +693,6 @@ class SurveyPointManager:
         canvas = self.get_canvas()
         if canvas is None:
             return
-        sc = self.sc
-        gmi = self.get_gmi()
         if compassRose is not None:
             self.compass_rose = CompassRose(compassRose).live_obj()
         if self.compass_rose is None:
@@ -678,7 +721,7 @@ class SurveyPointManager:
     def create_scales(self):
         """ Add new scale
         """
-        scale =  SurveyMapScale(self, xYFract=(.2,.8), lengFract=.4, deg=0, unit="Feet")
+        scale =  SurveyMapScale(self, xYFract=(.2,.85), lengFract=.43, deg=0, unit="Feet")
         scale.display()
         self.scales.append(scale)
         scale = SurveyMapScale(self, xYFract=(.2,.9), lengFract=.5, deg=0, unit="Meters")
@@ -709,9 +752,9 @@ class SurveyPointManager:
         
         if third_to_home:
             iodraw = self.get_iodraw()
-            pfirst_ll = (42.3733323, -71.1827931)
+            phome_ll = (42.3733323, -71.1827931)
             pthird_ll = (42.3734756, -71.1830477)
-            scale = SurveyMapScale(self, latLong=pthird_ll, latLongEnd=pfirst_ll, unit='f',
+            scale = SurveyMapScale(self, latLong=pthird_ll, latLongEnd=phome_ll, unit='f',
                                     tic_dir=-1)
             scale.display()
             self.scales.append(scale)
@@ -820,6 +863,8 @@ class SurveyPointManager:
                 self.add_trail_file(self.trailfile)
                 trail_selection = self.get_point_list("trails")
             trail = trail_selection.point_list
+            if title is None:
+                title = trail.title
         self.trail_width = 2.       # Trail width in meters
         self.max_dist_allowed = 150.
         trail_width = max(self.meterToPixel(self.trail_width), 2)
@@ -960,3 +1005,10 @@ class SurveyPointManager:
             return pt
             
         return None
+    
+    def remove_points(self, points):
+        """ Remove given points
+        :points: list of points
+        """
+        for point in points:
+            self.remove_point(point)

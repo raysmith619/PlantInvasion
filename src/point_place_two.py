@@ -339,7 +339,9 @@ class PointPlaceTwo(Toplevel):
         if self.display_monitor:
             p1 = self.point1 
             p1c = CanvasCoords(self.sc, lat=p1.lat, long=p1.long, unit=self.unit)
-            p2 = self.point2         
+            p2 = self.point2
+            if SlTrace.trace("track_scale"):
+                SlTrace.lg(f"tracking: {p1} to {p2}")         
             p2c = CanvasCoords(self.sc, lat=p2.lat, long=p2.long, unit=self.unit)
             
             latitude_dist = p2c.lat - p1c.lat
@@ -363,7 +365,16 @@ class PointPlaceTwo(Toplevel):
             linear_dist = sqrt((p2c.x_dist-p1c.x_dist)**2
                                +(p2c.y_dist-p1c.y_dist)**2)
             self.set_ctl_val("linear_dist", linear_dist, fmt=self.dis_fmt)
-            
+            if SlTrace.trace("track_scale"):
+                gmi = self.get_gmi()
+                SlTrace.lg(f"p1 x_dist:{p1c.x_dist:{self.dis_fmt}} y_dist:{p1c.y_dist:{self.dis_fmt}}")
+                SlTrace.lg(f"p2 x_dist:{p2c.x_dist:{self.dis_fmt}} y_dist:{p2c.y_dist:{self.dis_fmt}}")
+                SlTrace.lg(f"p2-p1 x_dist:{p2c.x_dist-p1c.x_dist:{self.dis_fmt}} y_dist:{p2c.y_dist-p1c.y_dist:{self.dis_fmt}}")
+                SlTrace.lg(f"linear_dist:{linear_dist:{self.dis_fmt}} {self.unit}")
+                geo_dist = gmi.geoDist((p2c.lat,p2c.long),
+                                      (p1c.lat,p1c.long),
+                                       unit=self.unit)
+                SlTrace.lg(f"geoDist:{geo_dist:{self.dis_fmt}} {self.unit}")
             x_image = p2c.x_image - p1c.x_image
             self.set_ctl_label("x_image", f"x({self.unit})")
             self.set_ctl_val("x_image", x_image, fmt=self.px_fmt)
@@ -599,7 +610,10 @@ class PointPlaceTwo(Toplevel):
         if self.standalone and self.mw is not None:
             self.mw.destroy()
             self.mw = None
-            
+
+    def get_gmi(self):
+        return self.sc.gmi
+    
 if __name__ == "__main__":
     from select_trace import SlTrace
     

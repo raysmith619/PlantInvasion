@@ -364,17 +364,17 @@ class GoogleMapImage:
         if file is not None and mapPoints is None and ulLat is None:
             image, info = LoadImageFile(file)
             SlTrace.lg(f"info:{info}")
-            self.ulLat = info["ulLat"]
-            self.ulLong = info["ulLong"]
-            self.lrLat = info["lrLat"]
-            self.lrLong = info["lrLong"]
+            self._ulLat = info["ulLat"]
+            self._ulLong = info["ulLong"]
+            self._lrLat = info["lrLat"]
+            self._lrLong = info["lrLong"]
         else:           # Canculate dimensions
             if (ulLat is not None and ulLong is not None
                   and lrLat is not None and lrLong is not None):
                 self.ulat = ulLat
-                self.ulLong = ulLong
-                self.lrLat = lrLat
-                self.lrLong = lrLong
+                self._ulLong = ulLong
+                self._lrLat = lrLat
+                self._lrLong = lrLong
             elif mapPoints is not None:
                 ulLatLong, lrLatLong = GeoDraw.boundLatLong(points=mapPoints, mapRotate=mapRotate,
                                                        borderM=mapBorderM,
@@ -472,10 +472,10 @@ class GoogleMapImage:
             
             cc_dist = geoDistance(latLong=(ulLat, ulLong), latLong2=(lrLat, lrLong))
             SlTrace.lg("             corner to corner:= %.2f meters" % cc_dist)
-            self.ulLat = ulLat
-            self.ulLong = ulLong
-            self.lrLat = lrLat
-            self.lrLong = lrLong
+            self._ulLat = ulLat
+            self._ulLong = ulLong
+            self._lrLat = lrLat
+            self._lrLong = lrLong
             if scale is None:
                 scale = 1
             self.scale = scale
@@ -497,8 +497,8 @@ class GoogleMapImage:
             else:
                 image = self.getImage(mapRotate=mapRotate)
         self.geoDraw = GeoDraw(image,
-                               ulLat=self.ulLat, ulLong=self.ulLong,
-                               lrLat=self.lrLat, lrLong=self.lrLong,
+                               ulLat=self._ulLat, ulLong=self._ulLong,
+                               lrLat=self._lrLat, lrLong=self._lrLong,
                                mapRotate=mapRotate,
                                expandRotate=self.expandRotate,
                                unit=unit)
@@ -524,8 +524,8 @@ class GoogleMapImage:
         Returns absolute path name
         """
         base_name = "gmi_ulA%.6f_O%.6f_lRA%.6f_O%.6f_%dx%d_sc%dz%d_%s" % (
-                    self.ulLat, self.ulLong,
-                                self.lrLat, self.lrLong,
+                    self._ulLat, self._ulLong,
+                                self._lrLat, self._lrLong,
                                                 self.xSize, self.ySize,
                                                         self.scale,
                                                         self.zoom,
@@ -542,7 +542,7 @@ class GoogleMapImage:
         """ Get reference latitude, longitude generally uper left corner (corresponds to 0,0 on image
         :returns: (latitude, longitude pair)
         """
-        return (self.ulLat, self.ulLong)
+        return (self.get_ulLat(), self.get_ulLong())
 
     def makeInfoName(self, imageName=None):
         """
@@ -597,7 +597,7 @@ class GoogleMapImage:
         ctype = ctype.lower()
         if ref_latLong is None:
             ref_latLong = self.get_ref_latLong()
-        ll_cent = (self.ulLat+self.lrLat)/2, (self.ulLong+self.lrLong)/2
+        ll_cent = (self.get_ulLat()+self.get_lrLat())/2, (self.get_ulLong()+self.get_lrLong())/2
         if ctype == 'll':
             return ll_cent
 
@@ -642,6 +642,18 @@ class GoogleMapImage:
         """
         return self.geoDraw.getYFract(y_image)
 
+    def get_lrLat(self):
+        return self.geoDraw.lrLat
+    
+    def get_lrLong(self):
+        return self.geoDraw.lrLong
+    
+    def get_ulLat(self):
+        return self.geoDraw.ulLat
+    
+    def get_ulLong(self):
+        return self.geoDraw.ulLong
+        
     def get_mapRotate(self):
         """ Get current map rotation 0<= deg < 360
         """
@@ -755,8 +767,8 @@ class GoogleMapImage:
             SlTrace.lg("File image: ulLat:%.6f ulLong %.6f lrLat:%.6f lrLong %.6f mapRotate %.0f" %
                         (ulLat, ulLong, lrLat, lrLong, mapRotate))
         else:                
-            ulLat, ulLong = self.ulLat, self.ulLong
-            lrLat, lrLong = self.lrLat, self.lrLong
+            ulLat, ulLong = self._ulLat, self._ulLong
+            lrLat, lrLong = self._lrLat, self._lrLong
             self.imageInfo = {}             # Startup info dictionary
             image = self.getRawImage(ulLatLong=(ulLat, ulLong), lrLatLong=(lrLat, lrLong))
             self.imageInfo['ulLat'] = ulLat
@@ -792,8 +804,8 @@ class GoogleMapImage:
             """
             """ Delay cropping --- 
             self.geoDraw = GeoDraw(self.image,
-                               ulLat=self.ulLat, ulLong=self.ulLong,
-                               lrLat=self.lrLat, lrLong=self.lrLong,
+                               ulLat=self._ulLat, ulLong=self._ulLong,
+                               lrLat=self._lrLat, lrLong=self._lrLong,
                                mapRotate=self.get_mapRotate())
             limitsXY, limitsXYpointh = self.geoDraw.limitsXY(self.mapPoints, self.get_mapRotate())
             x_min = limitsXY['min_x']
@@ -1089,7 +1101,7 @@ class GoogleMapImage:
         """
         Latitude size of plot == chg in latitude
         """
-        lat_chg = abs(self.ulLat - self.lrLat)
+        lat_chg = abs(self.get_ulLat() - self.get_lrLat())
         return lat_chg
 
 
@@ -1097,7 +1109,7 @@ class GoogleMapImage:
         """
         Longitude size of plot == chg in Longitude
         """
-        long_chg = abs(self.ulLong - self.lrLong)
+        long_chg = abs(self.get_ulLong() - self.get_lrLong())
         return long_chg
     
     
@@ -1106,7 +1118,7 @@ class GoogleMapImage:
         """
         X side of plot size in meters
         """
-        x_size = self.longSize()/360. * EQUATOR_CIRCUMFERENCE * cos(self.ulLat*pi/180.)
+        x_size = self.longSize()/360. * EQUATOR_CIRCUMFERENCE * cos(self.get_ulLat()*pi/180.)
         return x_size
 
 
@@ -1125,12 +1137,12 @@ class GoogleMapImage:
                   but we generally talk x,y and lat, long or that's what we had heard
         """
         x_fract, y_fract = xy_fract
-        ul_long = self.ulLong
-        lr_long = self.lrLong
+        ul_long = self.get_ulLong()
+        lr_long = self.get_lrLong()
         ul_long2 = ul_long + x_fract*(ul_long-lr_long)
         
-        ul_lat = self.ulLat
-        lr_lat = self.lrLat
+        ul_lat = self.get_ulLat()
+        lr_lat = self.get_lrLat()
         ul_lat2 = ul_lat + y_fract*(ul_lat-lr_lat)
         return (ul_lat2, ul_long2)
 
@@ -1140,11 +1152,11 @@ class GoogleMapImage:
         Returning x,y pair
         """
         
-        long_chg = abs(long - self.lrLong)
+        long_chg = abs(long - self.get_lrLong())
         long_size = self.longSize()
         x_size = self.getWidth
         xpix = x_size - long_chg/long_size * x_size
-        lat_chg = abs(lat - self.lrLat)
+        lat_chg = abs(lat - self.get_lrLat())
         lat_size = self.latSize()
         y_size = self.getHeight
         ypix = y_size - lat_chg/lat_size * y_size    # yincreases down
@@ -1174,11 +1186,11 @@ class GoogleMapImage:
         
         x_size = self.getWidth()
         long_size = self.longSize()
-        long = self.ulLong + long_size*x/x_size 
+        long = self.get_ulLong() + long_size*x/x_size 
         
         y_size = self.getHeight()
         lat_size = self.latSize()
-        lat = self.lrLat + (y_size-y)*lat_size/y_size
+        lat = self.get_lrLat() + (y_size-y)*lat_size/y_size
         return lat, long
 
 
@@ -1339,8 +1351,8 @@ class GoogleMapImage:
             rel_rotate = map_rotate - gmi_rotate
             if rel_rotate > 1.e-6:
                 gmi_image = gmi_image.rotate(rel_rotate, expand=False)
-        ulX, ulY = gmi.getXY(latLong=(self.ulLat, self.ulLong))
-        lrX, lrY = gmi.getXY(latLong=(self.lrLat, self.lrLong))
+        ulX, ulY = gmi.getXY(latLong=(self.get_ulLat(), self.get_ulLong()))
+        lrX, lrY = gmi.getXY(latLong=(self.get_lrLat(), self.get_lrLong()))
         new_image = gmi_image.crop((ulX, ulY, lrX, lrY))
         return new_image
     

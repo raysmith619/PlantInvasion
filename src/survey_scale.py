@@ -23,8 +23,11 @@ class SurveyMapScale:
                 font_name="arial",
                 font_size=15,
                 tic_dir=1,
+                tic_leng=10,
                 marks=10,
-                bigMarks=10, 
+                bigMarks=10,
+                nlabel=4,
+                label_at_end=True, 
                 color="white"
                  ):
         """
@@ -59,8 +62,14 @@ class SurveyMapScale:
                         default: True ==> scale left to right on map
             :marks - ticks every marks unit
             :bigMarks - big marks every bigMarks mark
+            :nlabel: units every nlabel bigMarks
+                    default: 4
+            :label_at_end: Place label at end
+                    default: True
             :tic_dir: tic direction 1: axis + 90 deg, -1: axix -90 deg
                         default: 1
+            :tic_leng: tic marker length in pixels
+                    default: 10
             :unitName - text for unit - m - meter, f - foot
             :color - scale color
         :returns: NA
@@ -83,7 +92,10 @@ class SurveyMapScale:
         self.font_name=font_name
         self.font_size=font_size
         self.tic_dir = tic_dir
+        self.tic_leng = tic_leng
         self.marks = marks
+        self.nlabel = nlabel
+        self.label_at_end = label_at_end
         self.bigMarks = bigMarks
         self.unit = unit
         np1_spec = 0
@@ -204,10 +216,9 @@ class SurveyMapScale:
             
         tic_deg = deg + self.tic_dir*90
         self.display_tags.append(tag)
-        tic_len = 20        # tic mark length in pixels
+        tic_len = self.tic_leng        # tic mark length in pixels
         unit_len = iodraw.unitLen(self.unit)        # Assume meter
         tic_space = self.marks*unit_len      # distance, in distance units (e.g., meters), between tics
-        tic_space_pixel = iodraw.meterToPixel(tic_space)     # Assume symetric
         tic_width = iodraw.adjWidthBySize(2)
         tic_big_len = tic_len + 5
         tic_big_width = tic_width + iodraw.adjWidthBySize(3)
@@ -216,7 +227,7 @@ class SurveyMapScale:
             font_name = self.font_name
             if not re.match(r'\.[^.]+$', font_name):
                 font_name += ".ttf"
-            font = ImageFont.truetype(font_name, size=self.font_size)
+            font = ImageFont.truetype(font_name, size=self.font_size+50)
         else:
             font = (self.font_name, self.font_size)
         nthmark = 0     # Heavy tics
@@ -227,23 +238,27 @@ class SurveyMapScale:
         scale_xY = xY
         scale_pos = 0           # position relative to length
         scale_end = iodraw.pixelToMeter(leng)
+        tic_top = None          # Last big tic, if any
+        label = None            # last label, if any
         while scale_pos <= scale_end:
             mark_n += 1
             if mark_n % self.bigMarks == 1:
                 nthmark += 1
                 iodraw.drawLineSeg(xY=scale_xY, deg=tic_deg, leng=iodraw.pixelToMeter(tic_big_len),
                                       color=self.color, width=tic_big_width)
-                if nthmark % 2 == 1:
-                    label = "%d%s" % (round(scale_pos/unit_len), self.unit)
-                else:
-                    label = "%d" % round(scale_pos/unit_len)
+                label = "%d" % round(scale_pos/unit_len)
                 tic_top = iodraw.addToPoint(xY=scale_xY, lengPix=1.8*tic_big_len, deg=tic_deg)
                 iodraw.drawText(tic_top, label, 
                            font=font, color=self.color)
 
             else:
+                tic_top = iodraw.addToPoint(xY=scale_xY, lengPix=1.8*tic_big_len, deg=tic_deg)
                 iodraw.drawLineSeg(xY=scale_xY, deg=tic_deg, leng=iodraw.pixelToMeter(tic_len),
                                       color=self.color, width=tic_width)
+                ###label = "%d" % round(scale_pos/unit_len)
+                ###iodraw.drawText(tic_top, label, 
+                ###           font=font, color=self.color)
+        
             """
             Update position to next tic mark
             """
@@ -254,17 +269,23 @@ class SurveyMapScale:
             scale_pos = mark_n * tic_space
                 
             scale_xY = iodraw.addToPoint(xY=scale_xY, leng=tic_space, deg=deg)
-        pass
+        # Put units after last big tic
+        if tic_top is None:
+            tic_top = scale_xY
+        if label is None:
+            label = " "
+        unit_str = " "*len(label) + self.unit
+        iodraw.drawText(tic_top, unit_str, font=font, color=self.color)
+        
 
     def get_leng(self):
-        """ Get scale length
+        """ Get scale length on canvas
         :returns: length in pixels
         """
-        iodraw = self.get_iodraw()
         if self.leng is not None:
             return self.leng 
         
-        return self.lengFract*iodraw.getWidth()
+        return self.lengFract*self.get_sc().get_width()
     
 
     def addTitle(self, title, xY=None, size=None, color=None, **kwargs):

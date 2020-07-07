@@ -91,7 +91,14 @@ class SurveyRegion:
         :returns: True if completed region, else False
         """
         return self.completed
-    
+
+    def ullr_ll(self):
+        """ Get upper left, lower right corners latitutude, Longitude
+        :returns: ul,lr
+        """
+        min_lat, max_lat, min_long, max_long = self.min_max_ll()
+        return (max_lat, min_long), (min_lat, max_long)
+            
     def min_max_ll(self):
         """ Find min,max of latitude, longitude
         :returns: (min_lat, max_lat, min_long, max_long)
@@ -110,6 +117,27 @@ class SurveyRegion:
             if max_long is None or pt.long > max_long:
                 max_long = pt.long
         return min_lat, max_lat, min_long, max_long
+    
+    def min_max_xy(self):
+        """ Find min,max of x,y in image
+        :returns: (min_x, min_y, max_x, max_y)    # ulx,uly, lrx, lry
+        """
+        gD = self.mgr.get_geoDraw()
+        min_x = None
+        max_x = None
+        min_y = None
+        max_y = None
+        for pt in self.get_points():
+            x,y = gD.getXY(latLong=(pt.lat, pt.long))
+            if min_x is None or x < min_x:
+                min_x = x
+            if max_x is None or x > max_x:
+                max_x = x
+            if min_y is None or y < min_y:
+                min_y = y
+            if max_y is None or y > max_y:
+                max_y = y
+        return min_x, min_y, max_x, max_y
 
     def is_inside(self, point=None, latLong=None):
         """ Test if point is within region

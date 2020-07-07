@@ -346,6 +346,9 @@ class ScrolledCanvas(Frame):
         
     def lower_image(self):
         self.canv.lower(self.imgtag)
+        
+    def raise_image(self):
+        self.canv.tag_raise(self.imgtag)
 
 
     def mark_image_place(self):
@@ -661,7 +664,7 @@ class ScrolledCanvas(Frame):
 
         if len(xY_or_x_y) == 0:
             raise SelectError("imageToCanvas: xY required")
-        gmi = self.get_gmi()
+        gD = self.get_geoDraw()
         
         canvas_width = self.get_canvas_width()
         canvas_height = self.get_canvas_height()
@@ -673,8 +676,8 @@ class ScrolledCanvas(Frame):
                             height=canvas_height,
                             deg=mapRotate)
         '''
-        image_width = gmi.getWidth()
-        image_height = gmi.getHeight()
+        image_width = gD.getWidth()
+        image_height = gD.getHeight()
         x_image = canvas_x*image_width/canvas_width
         y_image = canvas_y*image_height/canvas_height
 

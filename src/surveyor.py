@@ -281,6 +281,11 @@ def map_region():
         if not pt_mgr.map_region():
             SlTrace.report("No region created")
 
+def expand_region():
+    if pt_mgr is not None:
+        if not pt_mgr.expand_region():
+            SlTrace.report("No region to expand")
+
 def select_region():
     if pt_mgr is not None:
         if not pt_mgr.select_region():
@@ -297,6 +302,12 @@ def use_region():
 def set_image():
     if sc is not None:
         sc.set_image()
+
+def previous_map():
+    if pt_mgr is None:
+        return
+    
+    pt_mgr.previous_map()
 
 def rotate_map():
     if pt_mgr is None:
@@ -393,6 +404,8 @@ filemenu.add_command(label="Track Points", command=track_points)
 menubar.add_cascade(label="Trail Operation", menu=filemenu)
 
 menubar, filemenu = app.add_menu()
+filemenu.add_command(label="Expand Region", command=expand_region)
+filemenu.add_separator()
 filemenu.add_command(label="Select Region", command=select_region)
 filemenu.add_separator()
 filemenu.add_command(label="Map Region", command=map_region)
@@ -401,6 +414,8 @@ filemenu.add_command(label="USE Region", command=use_region)
 menubar.add_cascade(label="Region Operation", menu=filemenu)
 
 menubar, filemenu = app.add_menu()
+filemenu.add_command(label="Previous Map", command=previous_map)
+filemenu.add_separator()
 filemenu.add_command(label="Rotate Map", command=rotate_map)
 filemenu.add_separator()
 filemenu.add_command(label="Drag Map", command=drag_map)

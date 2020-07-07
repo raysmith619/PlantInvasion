@@ -128,7 +128,21 @@ class SurveyPoint:
 
     def destroy(self):
         self.delete()
-                    
+
+    def distance_m(self, p2):
+        """ Distance, in meters between this point to another point
+        :p2: other point
+        :returns: distance, in meters
+        """
+        pass
+
+    def distance_ll(self, p2):
+        """ Distance, in long/lat deg between this point to another point
+        :p2: other point
+        :returns: distance, in meters
+        """
+        pass
+                            
     def display(self, displayed=None, color=None):
         """ Display point + label
         Adjusting / deleting / replacing iodraw tags as appropriate
@@ -340,7 +354,8 @@ class SurveyPoint:
         SlTrace.lg(f"    x(iodraw pix): {pc_x:{px_fmt}}  y(canvas pix): {pc_y:{px_fmt}}")
         rotate = gmi.get_mapRotate()
         SlTrace.lg(f"    rot({rotate})")
-        SlTrace.lg(f"    ulLat: {gmi.ulLat:{ll_fmt}} ulLong: {gmi.ulLong:{ll_fmt}}")
-        SlTrace.lg(f"    lrLat: {gmi.lrLat:{ll_fmt}} lrLong: {gmi.lrLong:{ll_fmt}}")
+        SlTrace.lg(f"    ulLat: {gmi.get_ulLat():{ll_fmt}} ulLong: {gmi.get_ulLong():{ll_fmt}}")
+        SlTrace.lg(f"    lrLat: {gmi.get_lrLat():{ll_fmt}} lrLong: {gmi.get_lrLong():{ll_fmt}}")
         SlTrace.lg(f"    Image: Width: {gmi.getWidth():{px_fmt}} Height: {gmi.getHeight():{px_fmt}}")
         SlTrace.lg(f"    Canvas: Width: {sc.get_canvas_width():{px_fmt}} Height: {sc.get_canvas_height():{px_fmt}}")
+        SlTrace.lg()

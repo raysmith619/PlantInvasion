@@ -1,0 +1,64 @@
+ 
+ make_point: Point P1: SurveyPoint P1: lat: 42.3750601 Long: -71.1857026
+     Latitude: 42.3750601 Longitude: -71.1857026
+     x(f): 224.1  y(f): 60.6
+     x(image pix): 2034  y(image pix): 550
+     x(iodraw pix): 279  y(canvas pix): 71
+     rot(0)
+     ulLat: 42.3756051 ulLong: -71.1884306
+     lrLat: 42.3698558 lrLong: -71.1795131
+     Image: Width: 6649 Height: 5802
+     Canvas: Width: 912 Height: 749
+  
+ Region Points
+ lat=42.37506011809148 long=-71.18568301457194 x_dist=167.03529221498036 y_dist=69.58086038173425
+ Point P1: SurveyPoint P1: lat: 42.3750601 Long: -71.1856830
+     Latitude: 42.3750601 Longitude: -71.1856830
+     x(f): 167.0  y(f): 69.6
+     x(image pix): 1516  y(image pix): 631
+     x(iodraw pix): 118  y(canvas pix): 284
+     rot(45)
+     ulLat: 42.3756051 ulLong: -71.1884306
+     lrLat: 42.3698558 lrLong: -71.1795131
+     Image: Width: 6649 Height: 5802
+     Canvas: Width: 912 Height: 749
+ 
+  
+ make_point: Point P1: SurveyPoint P1: lat: 42.3744998 Long: -71.1859177
+     Latitude: 42.3744998 Longitude: -71.1859177
+     x(f): 206.4  y(f): 122.9
+     x(image pix): 1874  y(image pix): 1115
+     x(iodraw pix): 257  y(canvas pix): 144
+     rot(0)
+     ulLat: 42.3756051 ulLong: -71.1884306
+     lrLat: 42.3698558 lrLong: -71.1795131
+     Image: Width: 6649 Height: 5802
+     Canvas: Width: 912 Height: 749
+ 
+ Starting region with SurveyPoint P1: lat: 42.3744998 Long: -71.1859177
+ lat=42.37270360913861 long=-71.18299405052683 x_dist=446.585969968903 y_dist=322.63203771108533
+ 
+ make_point: Point P2: SurveyPoint P2: lat: 42.3727036 Long: -71.1829941
+     Latitude: 42.3727036 Longitude: -71.1829941
+     x(f): 446.6  y(f): 322.6
+     x(image pix): 4054  y(image pix): 2928
+     x(iodraw pix): 556  y(canvas pix): 378
+     rot(0)
+     ulLat: 42.3756051 ulLong: -71.1884306
+     lrLat: 42.3698558 lrLong: -71.1795131
+     Image: Width: 6649 Height: 5802
+     Canvas: Width: 912 Height: 749
+ 
+ Adding to region with SurveyPoint P2: lat: 42.3727036 Long: -71.1829941
+ tracking point: P1
+ lat=42.37449977557174 long=-71.1859176877977 x_dist=206.42552928413258 y_dist=122.90744293766919
+ x_dist:206.4 y_dist:122.9
+  tracking: SurveyPoint P1: lat: 42.3744998 Long: -71.1859177 to SurveyPoint P2: lat: 42.3727036 Long: -71.1829941
+ lat=42.37270360913861 long=-71.18299405052683 x_dist=1465.1770668271095 y_dist=1058.5040607319072
+ p1 x_dist:677.249 y_dist:403.240
+ p2 x_dist:1465.177 y_dist:1058.504
+ p2-p1 x_dist:787.928 y_dist:655.264
+ linear_dist:1024.794 f
+ geoDist:1024.813 f
+ 
+ 

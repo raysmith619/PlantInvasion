@@ -1,7 +1,8 @@
 # canvas_coords.py    14May2020  crs
 """ Canvas-Image-Distance Translations
 """
-from select_trace import SelectError
+from select_trace import SlTrace
+from select_error import SelectError
 
 class CanvasCoords:
     """ Aid in converting / using coordinates
@@ -41,6 +42,8 @@ class CanvasCoords:
             
             x_image, y_image = gmi.getXY(latLong=(lat,long))
             x_dist, y_dist = gmi.getPos(latLong=(lat,long), unit=unit)
+            if SlTrace.trace("track_scale"):
+                SlTrace.lg(f"lat={lat} long={long} x_dist={x_dist} y_dist={y_dist}")
             canvas_x, canvas_y = sc.image_to_canvas((x_image,y_image))
         elif x_image is not None:
             if y_image is None:

@@ -12,7 +12,7 @@ class CompassRose:
         :present: visible
         """
         if placement is None:
-            placement = (.40, .30, .1)
+            placement = (.65, .25, .15)
         elif isinstance(placement, int) and placement==-1:
             placement=(-1,-1,-1)    # Not on map
         

@@ -417,7 +417,8 @@ class PointPlace(Toplevel):
         y_dist = pc.y_dist
         self.set_ctl_label("y_dist", f"y({self.unit})")
         self.set_ctl_val("y_dist", y_dist, fmt=self.dis_fmt)
-        
+        if SlTrace.trace("track_scale"):
+            SlTrace.lg(f"x_dist:{pc.x_dist:{self.dis_fmt}} y_dist:{pc.y_dist:{self.dis_fmt}}")        
         x_image = pc.x_image
         self.set_ctl_label("x_image", f"x(image pix)")
         self.set_ctl_val("x_image", x_image, fmt=self.px_fmt)

@@ -63,12 +63,14 @@ class ImageOverDraw:
 
     
 
-    def getXY(self, latLong=None, pos=None, xY=None, xYFract=None, unit=None):
+    def getXY(self, latLong=None, pos=None, xY=None, xYFract=None, unit=None, dest_based=False):
         """
         Get/Convert location pixel, map fraction, longitude, physical location/specification
-        to pixel location
+        :dest_based: If True - give x,y based on self.to_image, else CANVAS
+                    default: False
+
         """
-        if self.to_image:
+        if dest_based and self.to_image:
             return self.get_geoDraw().getXY(latLong=latLong, pos=pos,
                                         xY=xY, xYFract=xYFract, unit=unit)
             
@@ -76,18 +78,18 @@ class ImageOverDraw:
                                     xY=xY, xYFract=xYFract, unit=unit)
 
 
-    def getWidth(self):
+    def getWidth(self, dest_based=False):
         """ get display width
         """
-        if self.to_image:
+        if dest_based and self.to_image:
             return self.get_geoDraw().getWidth()
         else:
             return self.get_sc().get_canvas_width()
 
-    def getHeight(self):
+    def getHeight(self, dest_based=False):
         """ get display width
         """
-        if self.to_image:
+        if dest_based and self.to_image:
             return self.get_geoDraw().getHeight()
         else:
             return self.get_sc().get_canvas_height()
@@ -243,13 +245,16 @@ class ImageOverDraw:
         return True
 
     
-    def addToPoint(self, leng=None, lengPix=None, xY=None, pos=None, latLong=None, theta=None, deg=None, unit=None):
+    def addToPoint(self, leng=None, lengPix=None, xY=None, pos=None,
+                   latLong=None, theta=None, deg=None, unit=None, dest_based=False):
         """
-        Add to point (in unrotated image), returning adjusted point in appropriate pixels
+        Add to point (in unrotated drawing), returning adjusted point in appropriate pixels
         Add requested rotation (curDeg if None) to map rotation, if
         mapRotation is not None
+        :dest_based: If True - give x,y based on self.to_image, else CANVAS
+                    default: False
         """
-        if self.to_image:
+        if dest_based and self.to_image:
             return self.get_geoDraw().addToPoint(leng=leng, lengPix=lengPix, xY=xY, pos=pos,
                                                  latLong=latLong, theta=theta, deg=deg, unit=unit)
  
@@ -342,6 +347,7 @@ class ImageOverDraw:
         """
         Draw line segment, supporting pixel, pos, latLong
         :xY: x_image, y_image
+        :leng: length in meters
         Draw line segment starting at given point
         position(xY or pos or latLong) and going to 
             2nd point:
@@ -360,18 +366,18 @@ class ImageOverDraw:
         tag = self.drawLine(xY, new_xY, **kwargs)
         return tag
 
-    def meterToPixel(self, meter):
+    def meterToPixel(self, meter, dest_based=False):
         """ cvt meter to pixel
         """
-        if self.to_image:
+        if dest_based and self.to_image:
             return self.get_geoDraw().meterToPixel(meter)
         else:
             return self.get_sc().meterToPixel(meter)
 
-    def pixelToMeter(self, pixel):
+    def pixelToMeter(self, pixel, dest_based=False):
         """ cvt pixel to meter
         """
-        if self.to_image:
+        if dest_based and self.to_image:
             return self.get_geoDraw().pixelToMeter(pixel)
         else:
             return self.get_sc().pixelToMeter(pixel)
@@ -384,12 +390,17 @@ class ImageOverDraw:
             self.trail_title_tag = None
         if xY is None:
             xY = (self.getWidth()*.1, self.getHeight()*.05)
-        xY = self.adj_xY(xY)
+        ###xY = self.adj_xY(xY)
         if size is None:
             size = 16
+        if self.to_image:
+            size += 55
         if color is None:
             color = "white"
-        title_font = ("tahoma", size)
+        if self.to_image:
+            title_font = ImageFont.truetype("arial.ttf", size=size+35)
+        else:
+            title_font = ("tahoma", size)
         title_xy = xY
         self.trail_title_tag = self.drawText(title_xy,
                                     font=title_font,
@@ -471,26 +482,24 @@ class ImageOverDraw:
         if self.compass_rose is None:
             return
         
-        sc = self.get_sc()
-        gD = self.get_geoDraw()
-        
         cro = self.compass_rose
         if cro.tags:                    # Always remove previous
             for tag in cro.tags:
-                sc.delete_tag(tag)
+                self.delete_tag(tag)
             cro.tags = []
         x_fract = cro.x_fract
         y_fract = cro.y_fract
         lenFraction = cro.len_fract * 1
-        canvas_width = sc.get_canvas_width()
-        canvas_height = sc.get_canvas_height()
-        ap_canvas_x =  int(canvas_width * x_fract)
-        ap_canvas_y = int(canvas_height * y_fract)
+        canvas_width = self.getWidth()
+        canvas_height = self.getHeight()
+        ap_px =  canvas_width * x_fract
+        ap_py = canvas_height * y_fract
+        ap_px = (ap_px, ap_py)
         label_size = 16
         arrow_len = int(sqrt(canvas_width**2 + canvas_height**2) * lenFraction)
-        arrow_len_m = gD.pixelToMeter(arrow_len)
-        text_off = 2*label_size
-        text_off_m = gD.pixelToMeter(text_off)
+        arrow_len_m = self.pixelToMeter(arrow_len)
+        text_off = label_size
+        text_off_m = self.pixelToMeter(text_off)
         cent_color = "red"
         north_deg = GeoDraw.NORTH_DEG     # Default map north
         arrow_color = "green"
@@ -498,23 +507,21 @@ class ImageOverDraw:
         arrow_point_len = 10*arrow_width
         arrowshape=(arrow_point_len, 1.5*arrow_point_len,
                     arrow_point_len*.2)
-        arrow_point_len_m = gD.pixelToMeter(arrow_point_len)
-        ap_image = sc.canvas_to_image(ap_canvas_x, ap_canvas_y)
-        aps_image = gD.addToPoint(leng=-arrow_len_m/2, xY=ap_image,
+        arrow_point_len_m = self.pixelToMeter(arrow_point_len)
+        aps_px = self.addToPoint(leng=-arrow_len_m/2, xY=ap_px,
                                    deg=north_deg, unit="m")
-        ap_st = sc.image_to_canvas(aps_image)
+        ap_st = aps_px
         
-        ap_pt_image = gD.addToPoint(leng=arrow_point_len_m/2+arrow_len_m/2,
-                                   xY=ap_image,
+        ap_pt_px = self.addToPoint(leng=arrow_point_len_m/2+arrow_len_m/2,
+                                   xY=ap_px,
                                    deg=north_deg, unit="m")
         """ Shorten arrow shaft under arrow head """
-        ap_pt_shortened_image = gD.addToPoint(leng=-arrow_point_len_m*.8,
-                                   xY=ap_pt_image,
+        ap_pt_shortened_px = self.addToPoint(leng=-arrow_point_len_m*.8,
+                                   xY=ap_pt_px,
                                    deg=north_deg, unit="m")
-        ap_pt_shortened = sc.image_to_canvas(ap_pt_shortened_image)
         # addToPoint takes into consideration image rotation
  
-        tag = self.drawLine(ap_st, ap_pt_shortened,
+        tag = self.drawLine(ap_st, ap_pt_shortened_px,
                                  color=arrow_color,
                                  width=arrow_width)
         cro.tags.append(tag)
@@ -522,62 +529,70 @@ class ImageOverDraw:
         To facilitate image CompassRose
         we draw the arrow head as a polygon
         """
-        arh_pts_image = []                      # Arrow head pts ccw, image pts
+        arh_pts_px = []                      # Arrow head pts ccw, image pts
         arh_d1, arh_d2, arh_d3 = arrowshape     # arrowshape  d1,d2,d3
         arh_d1_m = self.pixelToMeter(arh_d1)    # arrowshape in meters
         arh_d2_m = self.pixelToMeter(arh_d2)
         arh_d3_m = self.pixelToMeter(arh_d3)
-        arh_pt_image = ap_pt_image              # arrow head point (p1)
-        arh_pts_image.append(arh_pt_image)
+        arh_pt_px = ap_pt_px
+        arh_pts_px.append(arh_pt_px)   # arrow head point (p1)
         
         arh_height_m = sqrt(arh_d2_m**2 - arh_d3_m**2)
-        arh_base_image = gD.addToPoint(leng=-arh_height_m,      # Move down by height of arrow head
-                                       xY=arh_pt_image,
+        arh_base_px = self.addToPoint(leng=-arh_height_m,      # Move down by height of arrow head
+                                       xY=arh_pt_px,
                                        deg=north_deg, unit="m")
-        arh_p2_image = gD.addToPoint(leng=arh_d3_m,             # Move left by width/2 of arrow head
-                                       xY=arh_base_image,
+        arh_p2_px = self.addToPoint(leng=arh_d3_m,             # Move left by width/2 of arrow head
+                                       xY=arh_base_px,
                                        deg=north_deg+90, unit="m")
-        arh_pts_image.append(arh_p2_image)
+        arh_pts_px.append(arh_p2_px)
         
-        arh_p3_image = gD.addToPoint(leng=arh_height_m-arh_d1_m,            # Move up/down to base center of arrow head
+        arh_p3_px = self.addToPoint(leng=arh_height_m-arh_d1_m,            # Move up/down to base center of arrow head
                                                                             # depending on d3 vs height
-                                       xY=arh_base_image,
+                                       xY=arh_base_px,
                                        deg=north_deg, unit="m")
-        arh_pts_image.append(arh_p3_image)
-        arh_p4_image = gD.addToPoint(2*arh_d3_m,                            # Move right 2*d3 from p2 point
-                                        xY=arh_p2_image,
+        arh_pts_px.append(arh_p3_px)
+        arh_p4_px = self.addToPoint(2*arh_d3_m,                            # Move right 2*d3 from p2 point
+                                        xY=arh_p2_px,
                                         deg=north_deg-90, unit="m")
-        arh_pts_image.append(arh_p4_image)
-        arh_pts = []
-        for arh_pt_image in arh_pts_image:
-            arh_pt = sc.image_to_canvas(arh_pt_image)
-            arh_pts.append(arh_pt)
-        cr_arrow_head = self.drawPolygon(*arh_pts, color=arrow_color)
+        arh_pts_px.append(arh_p4_px)
+        cr_arrow_head = self.drawPolygon(*arh_pts_px, color=arrow_color)
         cro.tags.append(cr_arrow_head)
                                         
-        cr_circle = self.drawCircle((ap_canvas_x, ap_canvas_y),
+        cr_circle = self.drawCircle(ap_px,
                       radius=4, color=cent_color)
         cro.tags.append(cr_circle)
-        cr_circle_cent = self.drawCircle((ap_canvas_x, ap_canvas_y),
+        cr_circle_cent = self.drawCircle(ap_px,
                       radius=2, color=arrow_color)
         cro.tags.append(cr_circle_cent)
         # North Label
-        text_image = gD.addToPoint(leng=text_off_m, xY=ap_pt_image,
+        text_px = self.addToPoint(leng=text_off_m, xY=ap_pt_px,
                                    deg=north_deg, unit="m") 
-        text_canvas_x, text_canvas_y = sc.image_to_canvas(text_image)
-        north_label_font = ("Helvetica", label_size)
-        apt_text_pos = (text_canvas_x, text_canvas_y)
-        tag = self.drawText(apt_text_pos,
+        if self.to_image:
+            north_label_font = ImageFont.truetype("arial.ttf", size=label_size+60)
+        else:
+            north_label_font = ("Helvetica", label_size)
+        tag = self.drawText(text_px,
                                text = "North",
                                font=north_label_font, color=arrow_color)
         cro.tags.append(tag)
 
+    def image_line_width(self, width=1):
+        """ Convert canvas line width to image line width
+            based on relative canvas / image size
+        """
+        gD = self.get_geoDraw()
+        sc = self.get_sc()
+        image_to_canvas_width = gD.getWidth()/sc.get_width() 
+        image_to_canvas_height = gD.getHeight()/sc.get_height()
+        image_to_canvas = max(image_to_canvas_width, image_to_canvas_height, 1)
+        return width*image_to_canvas 
         
     def drawLine(self, *points, color=None, width=None, **kwargs):
         apoints = [self.adj_xY(point) for point in points]
         if self.to_image:
-            geoDraw = self.get_geoDraw()
-            geoDraw.drawLine(*apoints, color=color, width=width, **kwargs)
+            gD = self.get_geoDraw()
+            width = self.image_line_width(width)  # Adjust for different size
+            gD.drawLine(*apoints, color=color, width=width, **kwargs)
             return
         
         sc = self.get_sc()
@@ -668,6 +683,9 @@ class ImageOverDraw:
         if title is not None:
             self.trail_title = os.path.basename(title)
             title_xy = (self.getWidth()*.5, self.getHeight()*.05)
+            if self.to_image:
+                title_xy = (self.getWidth()*.05, self.getHeight()*.05)   # Not centered
+                
             self.drawTrailTitle(self.trail_title, xY=title_xy)
         self.trail_width = 2.       # Trail width in meters
         self.max_dist_allowed = 150.
@@ -699,7 +717,7 @@ class ImageOverDraw:
         if pt_mgr is None or pt_mgr.trail is None:
             return      # None to dispaly
         
-        SlTrace.lg("Removing trail display")
+        SlTrace.lg("Removing trail display", "trail")
         self.remove_trail_title_display()
         for tag in self.trail_tags:
             self.delete_tag(tag)
