@@ -95,10 +95,10 @@ def geoDistance(latLong=None, latLong2=None):
     lat2 = latLong2[0]
     lon2 = latLong2[1]
     R = 6371e3          # meters
-    phi1 = deg2rad(lat1)
-    phi2 = deg2rad(lat2)
-    delta_phi = deg2rad(lat2-lat1)
-    delta_lambda = deg2rad(lon2-lon1)
+    phi1 = radians(lat1)
+    phi2 = radians(lat2)
+    delta_phi = radians(lat2-lat1)
+    delta_lambda = radians(lon2-lon1)
     
     a = (
         sin(delta_phi/2) * sin(delta_phi/2) +
@@ -122,16 +122,16 @@ def geoMove(latLong=None, latDist=0, longDist=0):
     long1 = latLong[1]
     
     R = 6371e3          # meters
-    phi1 = deg2rad(lat1)
+    phi1 = radians(lat1)
     delta_phi = latDist / R 
     phi2 = phi1 + delta_phi
-    lat2 = rad2deg(phi2)
+    lat2 = degrees(phi2)
     
-    lambda1 = deg2rad(long1)
-    R2 = R * cos((phi1+phi2/2))     # Shortened by higher latitude
+    lambda1 = radians(long1)
+    R2 = R * cos((phi1+phi2)/2)     # Shortened by higher latitude
     delta_lambda = longDist / R2
     lambda2 = lambda1 + delta_lambda
-    long2 = rad2deg(lambda2)
+    long2 = degrees(lambda2)
     return lat2, long2
 
 def geoUnitLen(unit="meter"):
@@ -192,6 +192,7 @@ class GeoDraw:
         lrLat=None, lrLong=None,
         ulX=None, ulY=None,         # Strict distance unit non long/lat specs
         lrX=None, lrY=None,
+        forceSquare=True,
         
         pos=None,                   # Current pen location
         latLong=None,
@@ -213,6 +214,7 @@ class GeoDraw:
         :lrLat - Map's Lower right corner latitude
         :lrLong - Map's lower right corner longitude
         :mapRotate: - Map's rotation (in degrees, counter clockwise) from North (up)
+        :forceSquare: - Force new image dimensions to be square
         mapPoints - points (latitude, longitude) included in map - minimum a perimeter
         :pos - drawing pen current position (x,y) in unit(meter)
         :latLong - drawing pen current location (latitude, longitude) in degrees
@@ -223,6 +225,7 @@ class GeoDraw:
         self.in_pixelToLatLong = 0      # Debugging level count
         self.in_latLongToPixel = 0
         self.showSampleLL = showSampleLL
+        self.forceSquare = forceSquare
         self.compass_rose = CompassRose().live_obj()    
         if image is None:
             image = Image.new("RGB", (100, 100))
@@ -469,7 +472,7 @@ class GeoDraw:
         min_long2 = min_long1
         if rotate != 0:
             rotfact = 1.2
-            theta = deg2rad(rotate)
+            theta = radians(rotate)
             lat_radius = (max_lat1-min_lat1)/2
             lat_chg = rotfact*lat_radius * sin(theta)
             max_lat2 += lat_chg
@@ -892,7 +895,7 @@ class GeoDraw:
             
         scale_len = leng
         scale_deg = deg
-        scale_theta = deg2rad(scale_deg)
+        scale_theta = radians(scale_deg)
         tic_deg = scale_deg+tic_dir*90
         scale_width = self.adjWidthBySize(4)
         self.lineSeg(xY=xY, leng=scale_len, deg=scale_deg, fill=scale_color, width=scale_width)
@@ -1355,7 +1358,7 @@ class GeoDraw:
             deg = self.get_mapRotate()
         effective_zero = 1e-7
         if deg is not None and deg > effective_zero:
-            theta = deg2rad(deg)         # Rotate to North Facing
+            theta = radians(deg)         # Rotate to North Facing
             # Translate to center of image
             x_c = x - width/2.
             y_c = y - height/2.

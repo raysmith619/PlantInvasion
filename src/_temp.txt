@@ -61,4 +61,11 @@
  linear_dist:1024.794 f
  geoDist:1024.813 f
  
+ 11 6 42.3709541550789,-71.17848478206861
+ url=
+ http://maps.google.com/maps/api/staticmap?center=42.3709541550789%2C-71.17848478206861&
+ zoom=20&size=614x754&maptype=hybrid&sensor=false&scale=1&key=AIzaSyDfwM2pxp116AEkU0fygiBZhHnKnfYJcsI
+ http://maps.google.com/maps/api/staticmap?center=42.3709541550789%2C-71.17848478206861&
+ zoom=20&size=614x754&maptype=hybrid&sensor=false&scale=1&key=AIzaSyDfwM2pxp116AEkU0fygiBZhHnKnfYJcsI
+ 
  

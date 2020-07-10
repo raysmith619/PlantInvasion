@@ -4,7 +4,7 @@ Object From googlemapplot.py
 Checking on scale
 """
 
-from math import log, cos, sin, exp, sqrt, tan, atan, pi, ceil
+from math import log, sqrt, cos, exp, tan, atan, pi, ceil
 import re
 import os
 import time
@@ -12,16 +12,16 @@ import datetime
 import sys
 from openpyxl.compat.strings import file
 from PIL import Image, ImageDraw, ImageFont
-import urllib.request, urllib.parse, urllib.error, io
+import urllib.request, urllib.parse
 
 from select_trace import SlTrace
 from select_error import SelectError
 
-from GeoDraw import GeoDraw, geoDistance, gDistance
+from GeoDraw import GeoDraw, geoDistance
 from GeoDraw import geoMove, geoUnitLen, minMaxLatLong
-from select_error import SelectError
 from APIkey import APIKey
 from compass_rose import CompassRose
+from numpy import square
 
 
 ###from msilib.schema import File
@@ -240,8 +240,8 @@ class GoogleMapImage:
                  ulLat=None, ulLong=None,
                  lrLat=None, lrLong=None,
                  displayRotateChange=False,         # True create displays before and after rotate
-                 forceNew=False,                    # Force get of new image
                  forceSquare=False,
+                 forceNew=False,                    # Force get of new image
                  mapRotate=None,
                  mapPoints=None,                    # Draw map to include all points, when rotated
                                                     # SamplePoint
@@ -391,9 +391,9 @@ class GoogleMapImage:
                 SlTrace.lg(("points rotated %.0f deg bounds:" % mapRotate)
                       + "ulLat=%.6f ulLong=%.6f lrLat=%.6f lrLong=%.6f" %
                       (ulLat, ulLong,  lrLat, lrLong))
-                height = gDistance((ulLat, ulLong), (lrLat, ulLong))*1000
-                width = gDistance((ulLat, ulLong), (ulLat, lrLong))*1000
-                diagonal = gDistance((ulLat, ulLong), (lrLat, lrLong))*1000
+                height = geoDistance((ulLat, ulLong), (lrLat, ulLong))*1000
+                width = geoDistance((ulLat, ulLong), (ulLat, lrLong))*1000
+                diagonal = geoDistance((ulLat, ulLong), (lrLat, lrLong))*1000
                 SlTrace.lg("points rotated %.0f deg bounds(meters):" % (mapRotate)
                       + "height=%.6g width=%.6g diagonal=%.6g" %
                       (height, width, diagonal))
@@ -406,6 +406,7 @@ class GoogleMapImage:
                     ulLat, ulLong = geoMove((ulLat,ulLong), latDist=-yOffset_m, longDist=xOffset_m)
                     self.display_ulLat = ulLat
                     self.display_ulLong = ulLong                    
+                SlTrace.lg(f"ulLat:{ulLat} ulLong:{ulLong}")    
                 if xDim is not None:
                     if yDim is None:
                         yDim = xDim
@@ -413,23 +414,35 @@ class GoogleMapImage:
                         raise SelectError(f"xDim present - can't have lrLat({lrLat}, lrLong({lrLong})")
                         
                     unitLen = self.unitLen()
-                    latDist = -yDim/unitLen     # y increases downward, lat increases upward
+                    latDist = -yDim/unitLen     # y increases downward, latitude increases upward
                     longDist = xDim/unitLen     # x increases rightward, longitude increases(less negative) rightward
                     lrLat, lrLong = geoMove((ulLat,ulLong), latDist=latDist, longDist=longDist)
+                    ll_lat_diff = ulLat - lrLat
+                    ll_long_diff = lrLong - ulLong
+                    ll_diff = sqrt(ll_lat_diff**2 + ll_long_diff**2)
+                    SlTrace.lg(f"ll_lat_diff: {ll_lat_diff:{fmt_ll}}, ll_long_diff: {ll_long_diff:{fmt_ll}}")
+                    SlTrace.lg(f"ul to lr: {ll_diff:{fmt_ll}} deg")
+                    SlTrace.lg(f"ul to lr: {geoDistance((ulLat,ulLong), (lrLat,lrLong)):{fmt_dist}} meters")
                     self.display_lrLat = lrLat 
                     self.display_lrLong = lrLong
-
+                    SlTrace.lg(f"After xDim:{xDim} yDim:{yDim} from ulLat:{ulLat} ulLong:{ulLong}")
+                    SlTrace.lg(f"latDist:{latDist} longDist:{longDist} to lrLat:{lrLat}  lrLong:{lrLong}")
+                    x_dist = geoDistance((ulLat,ulLong), (ulLat,lrLong))
+                    y_dist = geoDistance((ulLat,ulLong), (lrLat,ulLong))
+                    SlTrace.lg(f"x_dist:{x_dist:{fmt_dist}} meter y_dist:{y_dist:{fmt_dist}}")
             centerLat = (ulLat+lrLat)/2
             centerLong =  (ulLong+lrLong)/2
-            SlTrace.lg(f"Centered: {centerLat} latitude  {centerLong} Longitude")
+            SlTrace.lg(f"Centered: {centerLat:{fmt_ll}} latitude  {centerLong:{fmt_ll}} Longitude")
             cc_dist = geoDistance(latLong=(ulLat, ulLong), latLong2=(lrLat, lrLong))
             lat_dist = (ulLat-lrLat)/2
             lat_dist_m = geoDistance(latLong=(ulLat, ulLong), latLong2=(lrLat, ulLong))
             long_dist = (lrLong-ulLong)/2
+            SlTrace.lg(f"Display area dimensions: height:{lat_dist:{fmt_ll}}"
+                       f" , width:{long_dist:{fmt_ll}} deg lat/long")
             min_lat = min(ulLat, lrLat)
-            long_dist_m = geoDistance(latLong=(min_lat,ulLong), latLong2=(min_lat, lrLong))
-            SlTrace.lg(f"Display area dimensions: height:{lat_dist_m:{fmt_dist}} m"
-                       f" , width:{long_dist_m:{fmt_dist}}")
+            long_dist_m = geoDistance(latLong=(ulLat,ulLong), latLong2=(ulLat, lrLong))
+            SlTrace.lg(f"Display area dimensions: height:{lat_dist_m:{fmt_dist}}"
+                       f" , width:{long_dist_m:{fmt_dist}} meters")
             self.display_ulLat = ulLat
             self.display_ulLong = ulLong
             self.display_lrLat = lrLat 
@@ -454,7 +467,9 @@ class GoogleMapImage:
                 SlTrace.lg("Map changes: ulLat=%.5f ulLong=%.5f lrLat=%.5f lrLong=%.5f" %
                                     (ulLat-self.display_ulLat, ulLong-self.display_ulLong,
                                       lrLat-self.display_lrLat, lrLong-self.display_lrLong))
-            if self.forceSquare:
+                SlTrace.lg(f"Enlarge area dimensions: height:{lat_dist:{fmt_ll}}"
+                           f" , width:{long_dist:{fmt_ll}} lat/long")
+            if False and self.forceSquare:          # Needs work ???
                 latDist = max(ulLat, lrLat) - min(ulLat, lrLat)
                 longDist = max(ulLong, lrLong) - min(ulLong, lrLong)
                 if abs(latDist-longDist) > 1e-6:
@@ -499,6 +514,7 @@ class GoogleMapImage:
         self.geoDraw = GeoDraw(image,
                                ulLat=self._ulLat, ulLong=self._ulLong,
                                lrLat=self._lrLat, lrLong=self._lrLong,
+                               forceSquare=forceSquare,
                                mapRotate=mapRotate,
                                expandRotate=self.expandRotate,
                                unit=unit)
@@ -766,9 +782,12 @@ class GoogleMapImage:
             mapRotate = self.imageInfo['mapRotate']
             SlTrace.lg("File image: ulLat:%.6f ulLong %.6f lrLat:%.6f lrLong %.6f mapRotate %.0f" %
                         (ulLat, ulLong, lrLat, lrLong, mapRotate))
-        else:                
-            ulLat, ulLong = self._ulLat, self._ulLong
-            lrLat, lrLong = self._lrLat, self._lrLong
+        else:
+            if self.forceSquare:
+                ulLat, ulLong, lrLat, lrLong = self.make_square()
+            else:                
+                ulLat, ulLong = self._ulLat, self._ulLong
+                lrLat, lrLong = self._lrLat, self._lrLong
             self.imageInfo = {}             # Startup info dictionary
             image = self.getRawImage(ulLatLong=(ulLat, ulLong), lrLatLong=(lrLat, lrLong))
             self.imageInfo['ulLat'] = ulLat
@@ -816,6 +835,33 @@ class GoogleMapImage:
             --- """
         return image
 
+    def make_square(self, ulLat=None, ulLong=None, lrLat=None, lrLong=None):
+        """ Make square map
+        Assumes 
+        :ulLat,ulLong,lrLat,lrLong: candidate corner ll
+        :returns: (ulLat,ulLong,lrLat,lrLong)
+        """
+        if ulLat is None:
+            ulLat = self._ulLat
+        if ulLong is None:
+            ulLong = self._ulLong
+        if lrLat is None:
+            lrLat = self._lrLat
+        if lrLong is None:
+            lrLong = self._lrLong
+        width = abs(geoDistance((ulLat,ulLong), (ulLat, lrLong)))
+        height = abs(geoDistance((ulLat,ulLong), (ulLat, lrLong)))
+        max_side = max(width,height)
+        min_side = min(width,height)
+        if max_side/min_side < 1e-5:
+            return ulLat, ulLong, lrLat, lrLong     # Close to square
+        
+        SlTrace.lg(f"squaring converting width:{width} x height: {height} to {max_side} square")
+        lrLat, lrLong = geoMove((ulLat,ulLong), latDist=-min_side, longDist=min_side)
+        
+        return ulLat, ulLong, lrLat, lrLong
+    
+        
 
     def crop(self, box=None):
         """
@@ -974,6 +1020,7 @@ class GoogleMapImage:
                         f=urllib.request.urlopen(url)
                         break
                     except:
+                        SlTrace.lg(f"GoogleMapImage.getRawImage: getrequest error:{url}")
                         raise
                         continue
                 
