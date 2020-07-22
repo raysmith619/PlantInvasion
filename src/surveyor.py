@@ -41,6 +41,8 @@ from scrolled_canvas import ScrolledCanvas
 from mapping_control import MappingControl
 
 def pgm_exit():
+    if pt_mgr is not None:
+        pt_mgr.save_favorite()
     SlTrace.lg("Properties File: %s"% SlTrace.getPropPath())
     SlTrace.lg("Log File: %s"% SlTrace.getLogPath())
     sys.exit(0)
@@ -228,6 +230,12 @@ def favorites():
         
     sc.map_ctl.get_favorites()
 
+def save_favorite():
+    if pt_mgr is None:
+        return
+    
+    pt_mgr.save_favorite()
+
 def save_map_file():
     if pt_mgr is None:
         return
@@ -384,7 +392,10 @@ def do_address(address):
 
 menubar, filemenu = app.add_menu()
 filemenu.add_command(label="Favorites", command=favorites)
+filemenu.add_separator()
 filemenu.add_command(label="Save Map", command=save_map_file)
+filemenu.add_separator()
+filemenu.add_command(label="Save Favorite", command=save_favorite)
 menubar.add_cascade(label="Places/Maps", menu=filemenu)
 
 menubar, filemenu = app.add_menu()

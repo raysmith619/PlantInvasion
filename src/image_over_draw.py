@@ -15,17 +15,14 @@ from GeoDraw import GeoDraw, geoUnitLen
 
 class ImageOverDraw:
     
-    def __init__(self, geoDraw=None, sc=None, to_image=False):
-        """ Setup drawing access
-            de
-        :geoDraw: image access, via geoDraw object
-                image writing only enabled if present
+    def __init__(self, sc=None, to_image=False):
+        """ All access if through ScrolledCanvas to facilitate dynamic changes
+            in geoDraw, pt_mgr
         :sc: canvas access, via ScrolledCanvas object
                 canvas(overlay) writing only enabled if present
         :to_image: default destination of writing
                 default: scanvas(False)
         """
-        self.set_geoDraw(geoDraw)
         self.set_sc(sc)
         self.to_image = to_image
         self.trail_title_tag = None     # trail display tags
@@ -33,12 +30,9 @@ class ImageOverDraw:
         
     def get_geoDraw(self):
         """ access to geoDraw
-        if not present - Error
-        future access may allow "lazy" evaluation/update
+        is via self.sc (ScrollableCanvas)
         """
-        if self.geoDraw is None:
-            raise SelectError("geoDraw not setup")
-        return self.geoDraw
+        return self.sc.get_geoDraw()
 
     def get_mapRotate(self):
         """ Get map rotation (counter clockwise)
@@ -93,13 +87,6 @@ class ImageOverDraw:
             return self.get_geoDraw().getHeight()
         else:
             return self.get_sc().get_canvas_height()
-        
-    def set_geoDraw(self, geoDraw):
-        """ setup/update of GeoDraw
-        ALL setup/update MUST go through here
-        :geoDraw: geoDraw (image) access
-        """
-        self.geoDraw = geoDraw
 
     def set_sc(self, sc):
         """ setup/update of sc (ScrolledCanvas)

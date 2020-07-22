@@ -1,4 +1,3 @@
-import PIL.Image
 from tkinter import Frame, Canvas, Toplevel, YES, BOTH, SUNKEN
 import PIL.ImageTk
 import os
@@ -284,7 +283,6 @@ class ScrolledCanvas(Frame):
         :trace: trace operation - Debugging
         """
         gmi = self.get_gmi()
-        sc = self
         lat_fract = gmi.getLatFract(lat)
         long_fract = gmi.getLongFract(long)
         canvas_width = self.get_width()
@@ -838,7 +836,12 @@ class ScrolledCanvas(Frame):
         :maptype: plot map type
         """
         self.maptype = maptype
-        
+ 
+ 
+    def save_favorite(self):
+        map_ctl = self.get_map_ctl()
+        map_ctl.save_favorite()
+               
     def set_canvas(self, image, width=None, height=None):
         """ Setup canvas, given original image and dimensions
         :image: original image to display
@@ -970,9 +973,11 @@ class ScrolledCanvas(Frame):
         
         self.update_gmi(gmi)
 
-    def update_lat_long(self, latLong, **kwargs):
+    def update_lat_long(self, latLong, centered=True, **kwargs):
         """ Update with latitude/longitude spec 
-        :latLong: upper left corner (lat,long) + GoogleMapImage parameters
+        :latLong: (lat,long) + GoogleMapImage parameters
+        :centered:    latLong are in center of plot, else upper left corner
+                default: centered - True
         :kwargs:  GoogleMapImage parameters (NOT file, ulLat, ulLong
         """
         if 'ulLat' in kwargs:
@@ -982,7 +987,7 @@ class ScrolledCanvas(Frame):
             raise SelectError("Can't have ulLong parameter")
 
         if self.maptype is not None and 'maptype' not in kwargs:
-            kwargs['maptype'] = self.maptype        
+            kwargs['maptype'] = self.maptype
         gmi = GoogleMapImage(ulLat=latLong[0], ulLong=latLong[1], **kwargs)
         if gmi is None:
             raise SelectError(f"Can't load GoogleMapImage(latLong{latLong}")

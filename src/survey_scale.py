@@ -8,10 +8,15 @@ from PIL import ImageFont
 
 from select_trace import SlTrace
 from select_error import SelectError
+from pandas.io.sas.sas_constants import column_label_length_length
+
+def fmt(val):
+    return f"{val:.2f}"
 
 class SurveyMapScale:
     
     def __init__(self, mgr,
+                name=None,
                 xY=None, xYFract=None, pos=None, latLong=None,
                 xYEnd=None, xYFractEnd=None, posEnd=None, latLongEnd=None,                
                 deg=None,
@@ -21,14 +26,19 @@ class SurveyMapScale:
                 
                 unit="m",
                 font_name="arial",
-                font_size=15,
+                font_size=-25,      # Pixelx
                 tic_dir=1,
                 tic_leng=10,
+                tic_width=2,
+                tic_color=None,
+                text_color=None,
                 marks=10,
                 bigMarks=10,
                 nlabel=4,
                 label_at_end=True, 
-                color="white"
+                color="white",
+                
+                width = 4
                  ):
         """
         Add scale marker
@@ -56,6 +66,7 @@ class SurveyMapScale:
                 AND
                 :deg: - direction of scale line in degrees from image horizontal
                          (0 - horizontal to right)
+            :name:    Unique identifier for replacement
             :mapRelative: True - direction is relative to map (not North facing)
                                 deg 0 left to right when facing North
                           False - North facing deg 0 ==> left to right, facing map
@@ -70,13 +81,18 @@ class SurveyMapScale:
                         default: 1
             :tic_leng: tic marker length in pixels
                     default: 10
+            :tic_width: tic marker width in pixels
+            :tic_color: tic color, default: color
+            :text_color: text marker color, defalt: tic_color
+            
             :unitName - text for unit - m - meter, f - foot
             :color - scale color
+            :width: scale base line width
         :returns: NA
         Raises: NA
         """
         self.mgr = mgr
-        
+        self.name = name
         self.xY = xY          # Initialize all so all can be passed to geoDraw
         self.xYFract = xYFract
         self.xYEnd = xYEnd
@@ -93,11 +109,13 @@ class SurveyMapScale:
         self.font_size=font_size
         self.tic_dir = tic_dir
         self.tic_leng = tic_leng
+        self.tic_width = tic_width
         self.marks = marks
         self.nlabel = nlabel
         self.label_at_end = label_at_end
         self.bigMarks = bigMarks
         self.unit = unit
+        self.width = width
         np1_spec = 0
         if xY is not None:
             np1_spec += 1
@@ -119,9 +137,10 @@ class SurveyMapScale:
             np2_spec += 1
         
         if np1_spec == 0:
-            xY = (self.getWidth()*.1, self.getHeight()*.9)
-            self.xY = xY
-            np1_spec += 1
+            self.xYFract = xYFract = .1
+            self.xYFractEnd = xYFractEnd = .9
+            np1_spec = 1
+            np2_spec = 1
         
         if leng is not None and lengFract is not None:
             raise SelectError("Can't specify both len and lenFract")
@@ -160,6 +179,12 @@ class SurveyMapScale:
             self.tic_dir = 1
         
         self.color = color
+        if tic_color is None:
+            tic_color = color
+        self.tic_color = tic_color
+        if text_color is None:
+            text_color = tic_color
+        self.text_color = text_color
         self.display_tags = []      # Display tags, if any
         
     """ Access to display objects
@@ -187,16 +212,35 @@ class SurveyMapScale:
             iodraw = self.get_iodraw()
             deg -= iodraw.get_mapRotate()
         return deg
+
+    def delete(self):
+        """ Remove from display
+        """
+        iodraw = self.get_iodraw()
+        if len(self.display_tags) > 0:
+            for tag in self.display_tags:
+                iodraw.delete_tag(tag)
+        self.display_tags = []
+
+    def label_len(self, num):
+        """ Calculate length in meters of scale label number
+        :num: scale number
+        :returns: length in meters
+        """
+        iodraw = self.get_iodraw()
+        label = str(num)
+        label_leng = iodraw.pixelToMeter(len(label)*abs(self.font_size*.7))
+        return label_leng 
     
-                        
     def display(self):
         """ Display scale
         Uses iodraw to facilitate display to overlay or image as appropriate
         """
         iodraw = self.get_iodraw()
+        self.delete()
         xY = iodraw.getXY(xY=self.xY, xYFract=self.xYFract, pos=self.pos, latLong=self.latLong)
         deg = self.get_deg()
-        scale_width = iodraw.adjWidthBySize(4)
+        scale_width = iodraw.adjWidthBySize(self.width)
         if self.np2_spec > 0:
             xYEnd = iodraw.getXY(xY=self.xYEnd, xYFract=self.xYFractEnd,
                                 pos=self.posEnd, latLong=self.latLongEnd)
@@ -213,21 +257,21 @@ class SurveyMapScale:
             tag = iodraw.drawLineSeg(xY=xY, leng=iodraw.pixelToMeter(leng),
                                  deg=deg,
                                  color=self.color, width=scale_width)
+        self.display_tags.append(tag)
             
         tic_deg = deg + self.tic_dir*90
-        self.display_tags.append(tag)
         tic_len = self.tic_leng        # tic mark length in pixels
         unit_len = iodraw.unitLen(self.unit)        # Assume meter
         tic_space = self.marks*unit_len      # distance, in distance units (e.g., meters), between tics
-        tic_width = iodraw.adjWidthBySize(2)
+        tic_width = iodraw.adjWidthBySize(self.tic_width)
         tic_big_len = tic_len + 5
-        tic_big_width = tic_width + iodraw.adjWidthBySize(3)
+        tic_big_width = iodraw.adjWidthBySize(tic_width *2)
         mark_n = 0          # nth marker
         if iodraw.to_image:
             font_name = self.font_name
             if not re.match(r'\.[^.]+$', font_name):
                 font_name += ".ttf"
-            font = ImageFont.truetype(font_name, size=self.font_size+50)
+            font = ImageFont.truetype(font_name, size=self.font_size*5)
         else:
             font = (self.font_name, self.font_size)
         nthmark = 0     # Heavy tics
@@ -239,25 +283,62 @@ class SurveyMapScale:
         scale_pos = 0           # position relative to length
         scale_end = iodraw.pixelToMeter(leng)
         tic_top = None          # Last big tic, if any
-        label = None            # last label, if any
+        label = ""              # last label, if any
+        prev_label_end_pos = 0
+        prev_label_end_xY = scale_xY
+        if SlTrace.trace("trace_scale"):
+            SlTrace.lg(f"\nscale.display {self.unit} {scale_xY}")
         while scale_pos <= scale_end:
+            scale_num = round(scale_pos/unit_len)
             mark_n += 1
+            label = f"{scale_num}"
+            label_leng = self.label_len(scale_num)
+            mark_big_n = mark_n if mark_n%self.bigMarks == 0 else mark_n + self.bigMarks - mark_n%self.bigMarks 
+            next_scale_big_pos = mark_big_n * tic_space
+            next_scale_big_num =  round(next_scale_big_pos/unit_len)
+            next_label_big_leng = self.label_len(next_scale_big_num)
             if mark_n % self.bigMarks == 1:
                 nthmark += 1
-                iodraw.drawLineSeg(xY=scale_xY, deg=tic_deg, leng=iodraw.pixelToMeter(tic_big_len),
-                                      color=self.color, width=tic_big_width)
-                label = "%d" % round(scale_pos/unit_len)
-                tic_top = iodraw.addToPoint(xY=scale_xY, lengPix=1.8*tic_big_len, deg=tic_deg)
-                iodraw.drawText(tic_top, label, 
-                           font=font, color=self.color)
-
+                tag = iodraw.drawLineSeg(xY=scale_xY, deg=tic_deg, leng=iodraw.pixelToMeter(tic_big_len),
+                                      color=self.tic_color, width=tic_big_width)
+                self.display_tags.append(tag)
+                if scale_num > 0:
+                    tic_top = iodraw.addToPoint(xY=scale_xY, lengPix=1.8*tic_big_len, deg=tic_deg)
+                    tag = iodraw.drawText(tic_top, label, 
+                                    font=font, color=self.text_color)
+                    self.display_tags.append(tag)
+                    prev_label_end_pos = scale_pos + label_leng/2       # Centered label text
+                    prev_label_end_xY = iodraw.addToPoint(xY=tic_top, leng=label_leng, deg=deg)
             else:
-                tic_top = iodraw.addToPoint(xY=scale_xY, lengPix=1.8*tic_big_len, deg=tic_deg)
-                iodraw.drawLineSeg(xY=scale_xY, deg=tic_deg, leng=iodraw.pixelToMeter(tic_len),
-                                      color=self.color, width=tic_width)
-                ###label = "%d" % round(scale_pos/unit_len)
-                ###iodraw.drawText(tic_top, label, 
-                ###           font=font, color=self.color)
+                tag = iodraw.drawLineSeg(xY=scale_xY, deg=tic_deg, leng=iodraw.pixelToMeter(tic_len),
+                                      color=self.tic_color, width=tic_width)
+                self.display_tags.append(tag)
+                if scale_num > 0:
+                    tic_top = iodraw.addToPoint(xY=scale_xY, lengPix=1.8*tic_big_len, deg=tic_deg)
+                    if nthmark < 2:
+                        next_label_big_pos = next_scale_big_pos - next_label_big_leng/2
+                        label_pos = scale_pos - label_leng/2
+                        end_label_pos = scale_pos+label_leng/2
+                        if SlTrace.trace("trace_scale"):
+                            SlTrace.lg(f"scale_num:{scale_num} scale_pos:{fmt(scale_pos)}"
+                                       f" label_pos:{fmt(label_pos)}"
+                                       f" label_len:{fmt(label_leng)}"
+                                       f" next_scale_big_pos: {fmt(next_scale_big_pos)}"
+                                       f" next_big_len: {fmt(next_label_big_leng)}"
+                                       f" next_label_big_pos:{fmt(next_label_big_pos)}"
+                                       f" prev_label_end_pos: {fmt(prev_label_end_pos)}"
+                                       f" end_label_pos:{fmt(end_label_pos)}")
+                        if (label_pos > prev_label_end_pos
+                                and end_label_pos < next_label_big_pos):
+                            SlTrace.lg(f"label:{label}", "trace_scale")
+                            tag = iodraw.drawText(tic_top, label, 
+                                       font=font, color=self.text_color)
+                            self.display_tags.append(tag)
+                            prev_label_end_pos = label_pos + label_leng
+                            prev_label_end_xY = iodraw.addToPoint(xY=tic_top, leng=label_leng, deg=deg)
+ 
+            scale_pos = mark_n * tic_space
+            scale_xY = iodraw.addToPoint(xY=scale_xY, leng=tic_space, deg=deg)
         
             """
             Update position to next tic mark
@@ -266,16 +347,12 @@ class SurveyMapScale:
                 SlTrace.lg("mark_n: %d scale_pos: %.2f scale_xY: %s" %
                       (mark_n, scale_pos, scale_xY))
             
-            scale_pos = mark_n * tic_space
-                
-            scale_xY = iodraw.addToPoint(xY=scale_xY, leng=tic_space, deg=deg)
         # Put units after last big tic
-        if tic_top is None:
-            tic_top = scale_xY
         if label is None:
             label = " "
-        unit_str = " "*len(label) + self.unit
-        iodraw.drawText(tic_top, unit_str, font=font, color=self.color)
+        unit_str = " " *len(label) + self.unit
+        tag = iodraw.drawText(prev_label_end_xY, unit_str, font=font, color=self.text_color)
+        self.display_tags.append(tag)
         
 
     def get_leng(self):

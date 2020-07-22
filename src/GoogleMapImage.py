@@ -239,6 +239,7 @@ class GoogleMapImage:
                  gmi=None,
                  ulLat=None, ulLong=None,
                  lrLat=None, lrLong=None,
+                 centered=True,
                  displayRotateChange=False,         # True create displays before and after rotate
                  forceSquare=False,
                  forceNew=False,                    # Force get of new image
@@ -273,6 +274,7 @@ class GoogleMapImage:
                 default: no base get info from else where
         :ulLat, ulLong:  Upper left corner latitude, Longitude of image
         :lrLat, lrLong: Lower right corner latitude, longitude of image
+        :centered: Treat map plot as centered around
         :displayRotateChange: True - create displays unrotated, rotated
                         default: False
         :forceNew: True - force obtaining new image

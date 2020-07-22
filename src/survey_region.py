@@ -15,6 +15,7 @@ class SurveyRegion:
         self.edges = []     # List of edges
         self.points = []    # List of points
         self.completed = False
+        self.tracked = []   # tracked in this region
         
     def add_points(self, *points):
         """ Add zero or more points to end of region
@@ -43,6 +44,12 @@ class SurveyRegion:
             for edge in eds:
                 self.edges.append(edge)
 
+    def add_tracked(self, tracked):
+        """ Keep track of region tracked(edges)
+        """
+        self.tracked.append(tracked)
+        
+        
     def complete_region(self, from_points=True):
         """ Complete region (from points), if possible
         :from_points: Use points to create edges p1,p2, p2,p3,...
@@ -139,6 +146,12 @@ class SurveyRegion:
                 max_y = y
         return min_x, min_y, max_x, max_y
 
+    def ullr_xy(self):
+        """ Get bounding box
+        :returns: (ul_xy, lr_xy)
+        """
+        min_x, min_y, max_x, max_y = self.min_max_xy()
+        return (min_x,min_y), (max_x, max_y)
     def is_inside(self, point=None, latLong=None):
         """ Test if point is within region
         Initially must an approximation: within min/max latitude longitude

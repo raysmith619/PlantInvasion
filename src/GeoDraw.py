@@ -1253,20 +1253,20 @@ class GeoDraw:
         long = latLong[1]
         lat_offset = self.ulLat - lat         # from upper left corner - latitude decreases down, offset increases down
         long_offset = long - self.ulLong      # increase left to right
-
+        '''
         long_offset, lat_offset = self.rotate_xy(       # Returns: x-offset(longitude),
                                                         #          y-offset(latitude)
                     x=long_offset, y=lat_offset,
                     width=self.long_width, height=self.lat_height,
                     deg=-self.get_mapRotate())
-
+        '''
         mx = long_offset/self.long_width*self.getWidth()
         my = lat_offset/self.lat_height*self.getHeight()
-
+        '''
         mx, my = self.rotate_xy(x=mx, y=my,
                             width=self.getWidth(), height=self.getHeight(),
                             deg=self.get_mapRotate())
-
+        '''
         if self.in_pixelToLatLong == 0:
             latLong2 = self.pixelToLatLong((mx,my))
             latchg = latLong2[0]-latLong[0]
@@ -1476,22 +1476,25 @@ class GeoDraw:
         return imageRotate
         
 
-    def expandRegion(self, ulLat=None, ulLong=None, lrLat=None, lrLong=None, 
+    def expandRegion(self, ul_xy=None, lr_xy=None, 
                      aspect=True):
         """
         Expand region to fill map
-        :ulLat,...,lrLong: selection box
+        :ul_xy: upper left corner xy
+        :lr_xy: lower right corner xy
         :aspect: True keep x,y aspect unchanged TBD
                 default: True
         """
-        ul_x, ul_y = self.latLongToPixel((ulLat, ulLong))
-        lr_x, lr_y = self.latLongToPixel((lrLat, lrLong))
-        min
+        ul_x, ul_y = ul_xy
+        lr_x, lr_y = lr_xy
+        ulLat, ulLong = self.pixelToLatLong(ul_xy)
+        lrLat, lrLong = self.pixelToLatLong(lr_xy)
         self.prev_image = self.image
         new_im = self.image.crop(box=(ul_x, ul_y, lr_x, lr_y))
         SlTrace.lg(f"expandRegion: ul_x={ul_x} ul_y={ul_y} lr_x={lr_x} lr_y={lr_y}")
         SlTrace.lg(f"new_im: {new_im}")
         self.setImage(new_im)
+        
         self.setLatLong(ulLat=ulLat, ulLong=ulLong,
                         lrLat=lrLat, lrLong=lrLong)
         return new_im           # Just for immediate use, already stored

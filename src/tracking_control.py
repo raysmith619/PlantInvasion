@@ -35,8 +35,8 @@ class TrackingControl(SelectControlWindow):
                  unit='f',
                  auto_tracking="adjacent_pairs",
                  connection_line="line",
-                 connection_line_color="red",
-                 connection_line_width = 2,
+                 connection_line_color="blue",
+                 connection_line_width = 3,
                  cursor_info = "lat_long",
                  **kwargs):
         """ Initialize subclassed SelectControlWindow
@@ -165,7 +165,8 @@ class TrackingControl(SelectControlWindow):
         self.set_radio_button(field="line", label="none", command=self.change_connection_line,
                               set_value=self.connection_line)
         self.set_radio_button(field="line", label="line", command=self.change_connection_line)
-        self.set_radio_button(field="line", label="i_bar", command=self.change_connection_line)
+        self.set_radio_button(field="line", label="ruler", command=self.change_connection_line)
+        self.set_sep()
         self.set_fields(connection_frame, "line_attributes")
         self.set_entry(field="width", label="Width", value=self.connection_line_width, width=2)
         self.set_entry(field="color", label="Color", value=self.connection_line_color, width=10)
@@ -346,6 +347,8 @@ class TrackingControl(SelectControlWindow):
             return self.add_point_to_trail(point)
         
         if self.current_region is None:
+            if len(self.regions) > 0:
+                self.clear_region_accent()
             self.current_region = SurveyRegion(self.mgr)
             SlTrace.lg(f"Starting region with {point}")
         self.current_region.add_points(point)     # Add most recent point
@@ -362,14 +365,16 @@ class TrackingControl(SelectControlWindow):
         if point1 is not None and point2 is not None:
             SlTrace.lg(f"Adding to region with {point2}")
             connection_line = self.get_val("connection.line", self.connection_line)
-            connection_line_color=self.get_val("line_attributes.color", self.connection_line_color)
+            ###connection_line_color=self.get_val("line_attributes.color", self.connection_line_color)
             connection_line_width=self.get_val("line_attributes.width", self.connection_line_width)
-            self.track_two_points(point1, point2,
+            ppt2 = self.track_two_points(point1, point2,
                               line_type=connection_line,
-                              color=connection_line_color,
-                              width=connection_line_width)
+                              color="red",
+                              width=connection_line_width+1)
+            self.current_region.tracked.append(ppt2)
                 
     def change_connection_line(self, connection_line):
+        self.set_vals()     # Read form
         if connection_line is None:
             connection_line = self.connection_line
         else:
@@ -378,14 +383,17 @@ class TrackingControl(SelectControlWindow):
             tracked_item.change_connection_line(connection_line)
                 
     def change_cursor_info(self, cursor_info):
+        self.set_vals()     # Read form
         if cursor_info is not None:
             self.cursor_info = cursor_info
         self.mgr.change_cursor_info(self.cursor_info)
         
     def change_auto_tracking(self, tracking):
+        self.set_vals()     # Read form
         self.auto_tracking = tracking
 
     def change_unit(self, unit=None):
+        self.set_vals()     # Read form
         if unit is not None:
             self.unit = unit
         self.mgr.change_unit(self.unit)
@@ -418,9 +426,23 @@ class TrackingControl(SelectControlWindow):
         """
         return None if len(self.regions) == 0 else self.regions[index]
 
+    def clear_region_accent(self, region=None):
+        """ Clear region accenting attributes
+        :region: region to clear
+        """
+        if region is None:
+            region = self.regions[-1]
+        for tracked in region.tracked:
+            tracked.change_line_attr(color=self.connection_line_color,
+                                width=self.connection_line_width)
+        
+        
+        
     def restart_region(self):
         """ Restart region collection (with next point)
         """
+        if self.current_region is not None:
+            self.clear_region_accent(self.current_region)
         self.current_region = None
         
     def select_region_trail_points(self):
@@ -764,6 +786,7 @@ class TrackingControl(SelectControlWindow):
         :width: with of line in pixels
         :display_monitor: show connection attributes in monitor
             default: display
+        :returns: tracked item
         """
         p1 = point1.label
         p2 = point2.label
@@ -775,7 +798,7 @@ class TrackingControl(SelectControlWindow):
                             display_monitor=display_monitor,
                             unit=self.unit)
         self.tracked_items.append(pp2)
-        
+        return pp2
 
     def untrack_two_points(self):
         self.report("untrack_two_points")
@@ -832,6 +855,17 @@ class TrackingControl(SelectControlWindow):
         if self.mw is not None:
             self.mw.destroy()
         self.mw = None
+        
+    def set_vals(self):
+        """ Update internal values from all form ctls
+        """
+        self.auto_tracking = self.update_from_ctl("auto_tracking.auto_track")
+        self.connection_line = self.update_from_ctl("connection.line")
+        self.connection_line_color = self.update_from_ctl("line_attributes.color")
+        self.connection_line_width = self.update_from_ctl("line_attributes.width")
+        self.line_attributes = self.update_from_ctl("connection.line")
+        self.cursor_info = self.update_from_ctl("cursor.info")
+        self.unit = self.update_from_ctl("distance_units.unit")
 
     
 if __name__ == '__main__':

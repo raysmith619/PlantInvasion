@@ -7,8 +7,11 @@ from tkinter import *
 from math import sqrt
 
 from select_trace import SlTrace
+from select_error import SelectError
 from canvas_coords import CanvasCoords
 from GeoDraw import get_bearing
+from survey_ruler import SurveyRuler
+from docutils.nodes import row
 
 class PointPlaceTwo(Toplevel):
     ID_PREFIX = "PP_"       # Unique tracking type prefix
@@ -22,6 +25,7 @@ class PointPlaceTwo(Toplevel):
     CONNECTION_LINE_NONE = "none"
     CONNECTION_LINE_LINE = "line"
     CONNECTION_LINE_IBAR = "ibar"
+    CONNECTION_LINE_RULER = "ruler"
 
     ROW_TITLE = 0
     COL_TITLE = 2
@@ -82,13 +86,9 @@ class PointPlaceTwo(Toplevel):
     COL_P1_P2_HEADING_LABEL = COL_POINT2_NAME + 1
     COL_P1_P2_HEADING = COL_P1_P2_HEADING_LABEL + 1
 
-    ROW_SET_POINTS = ROW_POINT_NAMES + 1
-    COL_SET_POINTS = COL_POINT2_NAME + 1
-
-    
-    ROW_ADD_POINT = ROW_SET_POINTS
-    COL_ADD_POINT = COL_SET_POINTS + 2
-    
+    ROW_CON_LINE_HEADING = ROW_P1_P2_HEADING_LABEL + 1
+    COL_CON_LINE_HEADING = 1
+        
     def __init__(self, sc=None, parent=None, title=None,
                  position=None,
                  size=None,
@@ -155,6 +155,7 @@ class PointPlaceTwo(Toplevel):
         self.ref_latLong = None         # Set to reference location when image is loaded
         self.show_point = PointPlaceTwo.SHOW_POINT_DIST
         self.show_point_tag = None      # show point text tag
+        self.ctls = {}                  # Used by set_radio_button
         self.ctls_vars = {}             # var By field
         self.ctls_ctls = {}             # ctl By field
         self.ctls_labels = {}           # ctl labels (if one) by field
@@ -164,10 +165,12 @@ class PointPlaceTwo(Toplevel):
         self.motion_update2 = None     # Used if sc already has a motion call
         self.unit = unit
         self.connection_line_tag = None # Connection line tag(s), if any
+        self.connection_line_ruler = None   # Ruler, if any
         self.connection_line_width=connection_line_width
         self.connection_line_color=connection_line_color
         self.display_monitor = display_monitor
-        
+        self.row = 0
+        self.col = -1
         if display_monitor:
             self.setup_display_monitor()
         
@@ -196,6 +199,7 @@ class PointPlaceTwo(Toplevel):
         top_frame = Frame(self.mw)
         top_frame.grid()
         ctl_frame = top_frame
+        self.ctl_frame = ctl_frame
         self.top_frame = top_frame
         if self.title is not None:
             title_label = Label(master=self.top_frame, text=self.title, font="bold")
@@ -308,16 +312,16 @@ class PointPlaceTwo(Toplevel):
         entry.grid(row=PointPlaceTwo.ROW_P1_P2_HEADING_LABEL,
                    column=PointPlaceTwo.COL_P1_P2_HEADING, sticky=W)
 
+        field = "con_line"
+        self.set_label(text="Connection",
+                            row=PointPlaceTwo.ROW_CON_LINE_HEADING,
+                            col=PointPlaceTwo.COL_CON_LINE_HEADING)
+        self.set_radio_button(field=field,
+                              label="none", set_value=self.connection_line,
+                              command=self.change_connection_line)
+        self.set_radio_button(field=field, label="line", command=self.change_connection_line)
+        self.set_radio_button(field=field, label="ruler", command=self.change_connection_line)
         
-        field = "set_points"
-        self.ctls_vars[field] = content = StringVar()
-        self.ctls_ctls[field] = button = Button(ctl_frame, text="Add Point")
-        button.grid(row=PointPlaceTwo.ROW_ADD_POINT, column=PointPlaceTwo.COL_ADD_POINT)
-        
-        field = "add_point"
-        self.ctls_vars[field] = content = StringVar()
-        self.ctls_ctls[field] = button = Button(ctl_frame, text="Add Point")
-        button.grid(row=PointPlaceTwo.ROW_ADD_POINT, column=PointPlaceTwo.COL_ADD_POINT)
         self.mw.protocol("WM_DELETE_WINDOW", self.delete_window)
         
         if self.track_sc:
@@ -325,6 +329,34 @@ class PointPlaceTwo(Toplevel):
         while self.tracking_sc:
             self.update()
 
+    def change_line(self, line):
+        line = line.lower()
+        if line == "none":
+            self.connection_line = PointPlaceTwo.CONNECTION_LINE_NONE
+        if line == "line":
+            self.connection_line = PointPlaceTwo.CONNECTION_LINE_LINE
+        if line == "ruler":
+            self.connection_line = PointPlaceTwo.CONNECTION_LINE_RULER
+        self.update_connection()
+
+    def change_color(self, color):
+        self.connection_line_color = color
+        self.update_connection()
+        
+    def change_width(self, width):
+        self.connection_line_width = width
+        self.update_connection()
+        
+        
+    def change_line_attr(self, line=None, color=None,
+                         width=None):
+        if line is not None:
+            self.change_line(line)
+        if color is not None:
+            self.change_color(color)
+        if width is not None:
+            self.change_width(width)
+                    
     def point1_moved(self, point):
         self.point1 = point
         self.update_point2_minus_p1()
@@ -414,7 +446,9 @@ class PointPlaceTwo(Toplevel):
         if self.connection_line_tag is not None:
             iodraw.delete_tag(self.connection_line_tag)
             self.connection_line_tag = None
-            
+        if self.connection_line_ruler is not None:
+            self.connection_line_ruler.delete()
+            self.connection_line_ruler = None    
         if not self.visible:
             return
         
@@ -430,12 +464,32 @@ class PointPlaceTwo(Toplevel):
                 (p1_canvas_x, p1_canvas_y), (p2_canvas_x, p2_canvas_y),
                 color=self.connection_line_color,
                 width=self.connection_line_width)
+        elif self.connection_line == PointPlaceTwo.CONNECTION_LINE_RULER:
+            self.show_ruler(p1,p2)
         elif self.connection_line == PointPlaceTwo.CONNECTION_LINE_IBAR:
             pass
         if self.show_points:
             p1.display()        # Redisplay points
             p2.display()
-                
+
+    def show_ruler(self,p1, p2):
+        """ Show connection line as a ruler
+        :p1: starting point
+        :p2: ending point
+        """
+        if self.connection_line_ruler is not None:
+            self.connection_line_ruler.delete()
+            self.connection_line_ruler = None
+        p1_canvas_x, p1_canvas_y = self.sc.ll_to_canvas(lat=p1.lat, long=p1.long)
+        p2_canvas_x, p2_canvas_y = self.sc.ll_to_canvas(lat=p2.lat, long=p2.long)
+        ruler = SurveyRuler(p1.mgr,
+                    xY=(p1_canvas_x, p1_canvas_y),
+                    xYEnd=(p2_canvas_x, p2_canvas_y),
+                    color=self.connection_line_color,
+                    width=self.connection_line_width,
+                    unit=self.unit)
+        ruler.display()
+        self.connection_line_ruler = ruler                 
     def delete_window(self):
         """ Delete window
         """
@@ -557,6 +611,78 @@ class PointPlaceTwo(Toplevel):
         if field in self.ctls_labels:
             ctl_label = self.ctls_labels[field]
             ctl_label.config(text=label)
+
+    def set_label(self, text, row=None, col=None):
+        """ Set text label
+        :text: text label
+        :row:  row, default current row
+        :col: col, current column
+        """
+        if row is None:
+            row = self.row
+        else:
+            self.row = row
+        if col is None:
+            col = self.col
+        else:
+            self.col = col
+        Label(master=self.ctl_frame, text=text).grid(row=row, column=col)
+
+        
+    def set_radio_button(self, field, row=None, col=None,
+                        label=None, value=None, set_value=None,
+                        command=None):
+        """ Set up one radio button for field
+        :field: identifying field
+        :row: grid row, default: use current row
+        :col: grid column, default add one to current col
+        :label: button label - must be unique in this group
+        :value: value associated with this button
+                    default: label string
+        :set_value: set group value if present
+                    default: leave group_value alone
+                    Anyone of the set_radio_button calls
+                    can set/change the value
+                    if present, value is overridden
+                    by property value
+        :command: function called with button group value when button selected
+        
+        """
+        if row is None:
+            row = self.row
+        else:
+            self.row = row
+        if col is None:
+            self.col += 1
+            col = self.col
+        else:
+            self.col = col
+        if label is None:
+            SelectError("set_radio_button - label is missing")
+        if value is None:
+            value = label
+        if command is None:
+            cmd = None
+        else:
+            cmd=lambda cmd=command : cmd(value)
+            
+            
+        full_field = field
+        if full_field not in self.ctls_vars:
+            content = StringVar()          # Create new one for group
+            self.ctls_vars[full_field] = content
+            ctls_ctl = self.ctls[full_field] = {}  # dictionary of Radiobutton button widgets
+        else:
+            content = self.ctls_vars[full_field]
+            ctls_ctl = self.ctls[full_field]
+        if set_value is not None:
+            content.set(set_value)
+        widget =  Radiobutton(master=self.ctl_frame, variable=content,
+                            text=label, value=value,
+                            command=cmd)
+        widget.grid(row=row, column=col)
+        ctls_ctl[full_field + "." + label] = widget           # Store each button in hash
+
         
     def set_lat_long(self, lat_long):
         """ Set latitude, longitude
@@ -607,6 +733,10 @@ class PointPlaceTwo(Toplevel):
         
         if self.connection_line_tag is not None:
             iodraw.delete_tag(self.connection_line_tag)
+            self.connection_line_tag = None
+        if self.connection_line_ruler is not None:
+            self.connection_line_ruler.delete()
+            self.connection_line_ruler = None
         if self.standalone and self.mw is not None:
             self.mw.destroy()
             self.mw = None

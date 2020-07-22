@@ -105,7 +105,7 @@ class SurveyPointManager:
         self.unit = unit
         self.tr_ctl = TrackingControl(self)
         self.point_lists = {}           # Dictionary of point list e.g. SampleFile, GPXFile
-        self.scales = []
+        self.scales = {}
         
     def track_cursor(self):
         """ start/restart tracking cursor
@@ -141,10 +141,14 @@ class SurveyPointManager:
         something else, being redisplayed, e.g. trail
         """
         other_points = {}
+        gmi = self.get_gmi()
+        if gmi is None:
+            return
+        
         if self.trail is not None:
             for tp in self.trail.get_points():
                 other_points[tp.label] = tp
-        gd = self.get_gmi().geoDraw
+        gd = gmi.geoDraw
         gd.mark_image()
         for point in self.points:
             '''
@@ -156,10 +160,60 @@ class SurveyPointManager:
             self.overlayCompassRose()
         if self.trail is not None:
             self.overlayTrail()
-        if len(self.scales) > 0:
-            for scale in self.scales:
-                scale.redisplay()
+        self.redisplay_scales()
         self.tr_ctl.redisplay()
+
+    def redisplay_scales(self):
+        """ Setup / resetup map scales, if any
+        """
+        
+        map_ctl = self.get_map_ctl()
+        self.scale_update(
+            map_show_scales = map_ctl.map_show_scales,
+            name = "scale1",
+            unit = map_ctl.map_scale1_unit,
+            xYFract = (map_ctl.map_scale1_xFract,
+                       map_ctl.map_scale1_yFract),
+            lengFract = map_ctl.map_scale1_lengFract,
+            deg = map_ctl.map_scale1_deg
+            )
+        self.scale_update(
+            map_show_scales = map_ctl.map_show_scales,
+            name = "scale2",
+            unit = map_ctl.map_scale2_unit,
+            xYFract = (map_ctl.map_scale2_xFract,
+                       map_ctl.map_scale2_yFract),
+            lengFract = map_ctl.map_scale2_lengFract,
+            deg = map_ctl.map_scale2_deg
+            )
+    
+        if len(self.scales) > 0:
+            for scale_name in self.scales:
+                self.scales[scale_name].redisplay()
+        map_ctl.map_scale_change = False
+        
+    def scale_update(self,
+        map_show_scales = True,
+        name = None,
+        unit = 'm',
+        xYFract = .3,
+        lengFract = .35,
+        deg=0):
+        """ Update named scale, if present
+        :map_show_scales: create new scale
+        :name: unique scale name
+        :unit: units default: m - meter
+        :xYFract: beginning fraction of screen size
+        :xyFract: end fraction of screen size
+        """
+        if name in self.scales:
+            self.scales[name].delete()
+            del self.scales[name]
+        if map_show_scales and unit.lower() != "none":
+            scale =  SurveyMapScale(self, xYFract=xYFract,
+                                    lengFract=lengFract, deg=deg, unit=unit)
+            scale.display()
+            self.scales[name] = scale
 
     def get_region(self): 
         """ Get currently selected(tracked) region
@@ -253,6 +307,10 @@ class SurveyPointManager:
             SlTrace.report(f"Region is not complete")
             return False
         
+        ul_xy, lr_xy = region.ullr_xy()
+        SlTrace.lg(f"ul_xy: {ul_xy[0]:.0f},{ul_xy[1]:.0f}"
+                   f" lr_xy:{lr_xy[0]:.0f},{lr_xy[1]:.0f}"
+                   f" of x: {gD.getWidth():.0f} y:{gD.getHeight()}")
         (ulLat, ulLong), (lrLat, lrLong) = region.ullr_ll()
         if SlTrace.trace("expand_points"):
             erp_color = "white"
@@ -264,9 +322,10 @@ class SurveyPointManager:
                                        color=erp_color))
         cc_dist = gD.geoDist((ulLat, ulLong), (lrLat, lrLong),  unit="m")
         SlTrace.lg(f"ul to lr dist: {cc_dist:.1f} meters")
-        self.remove_points(region.get_points()) # Of no use and clutter drawing
+        if not SlTrace.trace("keep_enlarge_region"):
+            self.remove_points(region.get_points()) # Of no use and clutter drawing
         self.tr_ctl.restart_region()
-        new_image = gD.expandRegion(ulLat, ulLong, lrLat, lrLong)
+        new_image = gD.expandRegion(ul_xy, lr_xy)
         self.sc.update_image(new_image)
         self.sc.size_image_to_canvas()
         self.sc.mark_canvas()
@@ -528,7 +587,15 @@ class SurveyPointManager:
             self.trail_segment = None
             self.tr_ctl.trail = None        # Synchronize with tracking
             self.tr_ctl.trail_segment = None
-            
+
+
+    def save_favorite(self):
+        """ Save currently mapping favorite
+        """
+        sc = self.get_sc()
+        sc.save_favorite()
+        SlTrace.save_propfile()
+                
     def save_map_file(self, mapfile=None):
         """ Save updated map file
         :mapfile: trail file name
@@ -622,6 +689,11 @@ class SurveyPointManager:
         """
         return self.points
 
+    def get_map_ctl(self):
+        """ Get MappingControl object
+        """
+        return self.get_sc().get_map_ctl()
+    
     def get_mapRotate(self):
         """ Get current map rotation 0<= deg < 360
         """
@@ -671,7 +743,7 @@ class SurveyPointManager:
         if gD is None:
             raise SelectError("geoDraw not ready")
         
-        self.iodraw = ImageOverDraw(sc=sc, geoDraw=gD)
+        self.iodraw = ImageOverDraw(sc=sc)
         return self.iodraw
 
     def add_scale(self):

@@ -351,7 +351,11 @@ class PointPlace(Toplevel):
         pc = CanvasCoords(self.sc, canvas_x=canvas_x, canvas_y=canvas_y)
         
         self.update_coords(lat=pc.lat, long=pc.long)
-            
+
+        def change_connection_line(connection_line):
+            """ Not used here
+            """
+            pass
             
         
     def set_ctl_val(self, field, val, fmt=".3"):   # NOTE: This duplicates support in SelectControlWindow
